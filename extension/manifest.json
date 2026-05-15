@@ -1,0 +1,77 @@
+{
+  "manifest_version": 3,
+  "name": "Emotion Lens - Social Media Emotion Detector",
+  "version": "1.0.0",
+  "description": "AI-powered emotion detection for social media text. Supports Vietnamese and English with real-time visual overlays.",
+  "author": "Emotion Lens Team",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://*.facebook.com/*",
+    "https://*.youtube.com/*",
+    "https://*.reddit.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.threads.net/*",
+    "https://*.twitter.com/*",
+    "https://*.x.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.facebook.com/*",
+        "https://*.youtube.com/*",
+        "https://*.reddit.com/*",
+        "https://*.tiktok.com/*",
+        "https://*.threads.net/*",
+        "https://*.twitter.com/*",
+        "https://*.x.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Emotion Lens"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "models/*",
+        "wasm/*",
+        "icons/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "minimum_chrome_version": "109"
+}
