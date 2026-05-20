@@ -1,11 +1,13 @@
 <!--
-  Label Studio labeling config — import vào project mới:
-  Settings → Labeling Interface → Upload this XML
+  Emotion Lens — Label Studio interface
+  QUAN TRỌNG: Tạo project MỚI hoặc xóa annotation cũ (schema "sentiment")
+  trước khi dán XML này, nếu không sẽ báo Validation error.
+
+  Import data: chạy jsonl_to_labelstudio.py → Import JSON vào project.
 -->
 <View>
-  <Header value="Vietnamese / English social text — Emotion Lens"/>
-  <Text name="text" value="$text"/>
-  <Choices name="emotion" toName="text" choice="single" showInline="true">
+  <Header value="Emotion Lens — gán nhãn cảm xúc (VI/EN social text)"/>
+  <Text name="text" value="$text"/>  <Choices name="emotion" toName="text" choice="single" showInline="true">
     <Choice value="joy"/>
     <Choice value="anger"/>
     <Choice value="sadness"/>
