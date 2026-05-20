@@ -1,0 +1,23 @@
+<!--
+  Label Studio labeling config — import vào project mới:
+  Settings → Labeling Interface → Upload this XML
+-->
+<View>
+  <Header value="Vietnamese / English social text — Emotion Lens"/>
+  <Text name="text" value="$text"/>
+  <Choices name="emotion" toName="text" choice="single" showInline="true">
+    <Choice value="joy"/>
+    <Choice value="anger"/>
+    <Choice value="sadness"/>
+    <Choice value="anxiety"/>
+    <Choice value="fear"/>
+    <Choice value="surprise"/>
+    <Choice value="admiration"/>
+    <Choice value="love"/>
+    <Choice value="neutral"/>
+    <Choice value="sarcastic"/>
+    <Choice value="toxic"/>
+  </Choices>
+  <Number name="toxicity" toName="text" min="0" max="1" step="0.1"/>
+  <Number name="sarcasm" toName="text" min="0" max="1" step="0.1"/>
+</View>

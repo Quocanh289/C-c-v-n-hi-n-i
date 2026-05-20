@@ -1,0 +1,63 @@
+# Platform crawler configuration
+# Rate limits are requests per minute per worker
+
+platforms:
+  reddit:
+    enabled: true
+    mode: api  # api | browser
+    rate_limit_rpm: 60
+    max_scroll_pages: 10
+    default_subreddits:
+      - vietnam
+      - VietNam
+      - learnvietnamese
+      - GenZ
+
+  youtube:
+    enabled: true
+    mode: api
+    rate_limit_rpm: 100
+    default_languages: ["vi", "en"]
+
+  tiktok:
+    enabled: true
+    mode: browser
+    rate_limit_rpm: 15
+    infinite_scroll_max: 20
+
+  facebook:
+    enabled: true
+    mode: browser
+    rate_limit_rpm: 10
+    public_only: true
+
+  threads:
+    enabled: true
+    mode: browser
+    rate_limit_rpm: 15
+
+  twitter:
+    enabled: true
+    mode: api
+    rate_limit_rpm: 50
+    default_queries:
+      - lang:vi
+      - "#vietnam" lang:vi
+
+schedules:
+  reddit_hot:
+    platform: reddit
+    cron: "0 */6 * * *"
+    params:
+      sort: hot
+      limit: 500
+
+  slang_drift_scan:
+    platform: internal
+    cron: "0 2 * * *"
+    task: slang.run_drift_detection
+
+  dataset_export:
+    platform: internal
+    cron: "0 4 * * 0"
+    task: dataset.export_weekly

@@ -1,0 +1,109 @@
+# Data Engine services — extends main docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f data_engine/docker-compose.data-engine.yml up -d
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: emotion-lens-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  data-engine-api:
+    build:
+      context: ./data_engine
+      dockerfile: Dockerfile
+    container_name: emotion-lens-data-engine
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=emotionlens
+      - POSTGRES_USER=emotionlens
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - MONGO_URI=mongodb://mongodb:27017
+      - QDRANT_HOST=qdrant
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DATASET_OUTPUT_DIR=/data/datasets
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+      - postgres
+      - mongodb
+      - qdrant
+
+  data-engine-crawler:
+    build:
+      context: ./data_engine
+      dockerfile: Dockerfile
+    container_name: emotion-lens-crawler-worker
+    restart: unless-stopped
+    command: celery -A data_engine.workers.celery_app worker -Q crawl,process -c 4 --loglevel=info
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - MONGO_URI=mongodb://mongodb:27017
+      - QDRANT_HOST=qdrant
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - PLAYWRIGHT_HEADLESS=true
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN:-}
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+      - mongodb
+      - qdrant
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+  data-engine-analytics:
+    build:
+      context: ./data_engine
+      dockerfile: Dockerfile
+    container_name: emotion-lens-analytics-worker
+    restart: unless-stopped
+    command: celery -A data_engine.workers.celery_app worker -Q analytics,export -c 2 --loglevel=info
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - MONGO_URI=mongodb://mongodb:27017
+      - QDRANT_HOST=qdrant
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+      - postgres
+      - mongodb
+
+  data-engine-beat:
+    build:
+      context: ./data_engine
+      dockerfile: Dockerfile
+    container_name: emotion-lens-data-beat
+    restart: unless-stopped
+    command: celery -A data_engine.workers.celery_app beat --loglevel=info
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+volumes:
+  mongo_data:

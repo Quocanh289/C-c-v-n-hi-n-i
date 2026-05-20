@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emotion-lens-data-engine"
+version = "1.0.0"
+description = "Vietnamese social-media crawling and dataset generation for Emotion Lens"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["data_engine*"]
