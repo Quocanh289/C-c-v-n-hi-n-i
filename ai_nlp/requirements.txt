@@ -1,8 +1,39 @@
-fastapi
-uvicorn
-pydantic
-transformers
-torch
-scikit-learn
-pandas
-numpy
+# ====================================================
+# Emotion Lens - Training Pipeline Dependencies
+# ====================================================
+# Install: pip install -r ai_nlp/requirements.txt
+
+# Core ML Framework
+torch>=2.1.0
+torchvision>=0.16.0  # For CUDA support verification
+
+# HuggingFace Transformers
+transformers>=4.36.0
+sentencepiece>=0.1.99
+protobuf>=3.20.3
+accelerate>=0.25.0
+peft>=0.7.0  # LoRA fine-tuning
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.1.0
+scikit-learn>=1.3.0
+
+# Kaggle Dataset Download
+kagglehub>=0.2.0  # For automated GoEmotions download
+
+# Logging & Monitoring
+tensorboard>=2.14.0  # Training visualization
+mlflow>=2.8.0       # Experiment tracking (optional)
+
+# Evaluation
+matplotlib>=3.7.0   # Confusion matrix visualization
+seaborn>=0.12.0     # Statistical data visualization
+
+# Utility
+tqdm>=4.65.0        # Progress bars
+pyyaml>=6.0         # Config file parsing (optional)
+
+# Inference optimization (for deployment)
+onnx>=1.15.0        # Model export to ONNX (optional)
+onnxruntime>=1.16.0  # ONNX inference (optional)
