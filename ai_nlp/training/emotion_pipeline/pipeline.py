@@ -133,9 +133,7 @@ def create_data_loaders(
     class_weights_9 = train_dataset.class_weights_9
 
     # Create data collator
-    collator = MultiLabelDataCollator(
-        tokenizer=tokenizer, padding=True, max_length=config.max_seq_length
-    )
+    collator = MultiLabelDataCollator()
 
     # Train loader
     train_loader = DataLoader(
@@ -379,7 +377,7 @@ def evaluate_model(
         augment=False,
     )
 
-    collator = MultiLabelDataCollator(tokenizer=tokenizer, padding=True)
+    collator = MultiLabelDataCollator()
     loader = DataLoader(
         dataset,
         batch_size=config.eval_batch_size,

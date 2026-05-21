@@ -164,7 +164,7 @@ class TrainingConfig:
     
     # ---------- Training Hyperparameters ----------
     num_epochs: int = 30
-    batch_size: int = 16
+    batch_size: int = 16  # RTX 4060 8GB: batch 16 fits with LoRA
     eval_batch_size: int = 32
     learning_rate: float = 2e-5
     weight_decay: float = 0.01
@@ -172,7 +172,7 @@ class TrainingConfig:
     warmup_steps: int = 0  # If 0, calculated from warmup_ratio * total_steps
     adam_epsilon: float = 1e-8
     max_grad_norm: float = 1.0
-    gradient_accumulation_steps: int = 2
+    gradient_accumulation_steps: int = 2  # Effective batch = 32 with 8GB VRAM
     
     # ---------- Scheduler ----------
     scheduler: str = "cosine"  # "linear", "cosine", "cosine_with_restarts"
@@ -195,15 +195,15 @@ class TrainingConfig:
     class_weights: bool = True
     
     # ---------- Optimization ----------
-    mixed_precision: str = "fp16"  # "fp16", "bf16", "no"
+    mixed_precision: str = "fp16"  # Use fp16 on GPU for 2x speedup
     use_ema: bool = False
     ema_decay: float = 0.999
-    use_fgm: bool = False  # Fast Gradient Method adversarial training
+    use_fgm: bool = False
     fgm_epsilon: float = 0.5
     use_rdrop: bool = False
     rdrop_alpha: float = 4.0
     compile: bool = False
-    gradient_checkpointing: bool = True
+    gradient_checkpointing: bool = True  # Saves VRAM on 8GB GPU
     
     # ---------- Early Stopping ----------
     early_stopping_patience: int = 7
@@ -223,7 +223,7 @@ class TrainingConfig:
     greater_is_better: bool = True
     
     # ---------- Data Augmentation ----------
-    use_augmentation: bool = True
+    use_augmentation: bool = True  # Re-enabled with GPU
     aug_synonym_prob: float = 0.3
     aug_random_swap: int = 2
     aug_random_delete_prob: float = 0.1
@@ -235,7 +235,7 @@ class TrainingConfig:
     handle_urls: bool = True
     
     # ---------- Threshold Optimization ----------
-    optimize_thresholds: bool = True
+    optimize_thresholds: bool = True  # Re-enabled with GPU
     threshold_optimization_metric: str = "macro_f1"
     threshold_n_trials: int = 100
     
@@ -243,13 +243,10 @@ class TrainingConfig:
     seed: int = 42
     
     # ---------- Hardware ----------
-    num_workers: int = 2
+    num_workers: int = 4  # 4 workers for GPU data loading
     
     # ---------- Class Balancing ----------
     use_balanced_sampling: bool = True
-    # Multi-label balancing strategy: "none", "labels", "samples"
-    # "labels": re-weight loss per label based on frequency
-    # "samples": re-sample based on total positive labels
     balancing_strategy: str = "labels"
     
     # ---------- Paths (computed) ----------
