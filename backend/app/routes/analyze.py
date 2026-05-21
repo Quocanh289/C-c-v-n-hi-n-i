@@ -1,14 +1,17 @@
 # ====================================================
 # Analysis Routes - Core Emotion Detection API
+# Uses the trained 28-label GoEmotions model
+# 28 fine-grained for English, 9 coarse for Vietnamese
 # ====================================================
 
 import logging
+import time
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 
-from app.models.emotion_model import InferenceResult
+from app.models.inference import GoEmotionsInference, get_inference, GOEMOTIONS_28, COARSE_EMOTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +25,32 @@ router = APIRouter(prefix="/analyze", tags=["analysis"])
 class AnalyzeRequest(BaseModel):
     """Request model for emotion analysis."""
     text: str = Field(..., min_length=1, max_length=2000, description="Text to analyze")
-    return_all_probs: bool = Field(False, description="Return probabilities for all emotions")
+    return_all_probs: bool = Field(True, description="Return probabilities for all emotions")
+    output_mode: Optional[str] = Field(None, description="'fine' (28), 'coarse' (9), or 'auto' (28 EN, 9 VI)")
 
 
 class BatchAnalyzeRequest(BaseModel):
     """Request model for batch analysis."""
     texts: List[str] = Field(..., min_length=1, max_length=100, description="List of texts to analyze")
-    return_all_probs: bool = Field(False, description="Return probabilities for all emotions")
+    return_all_probs: bool = Field(True, description="Return probabilities for all emotions")
 
 
 class AnalyzeResponse(BaseModel):
     """Response model for emotion analysis."""
     text: str
     primary_emotion: str
-    emotions: dict = {}
+    confidence: float = 0.0
+    label_type: str = "fine"  # "fine" (28) or "coarse" (9)
+    language: str = "en"
+    scores_28: dict = {}  # 28 fine-grained scores (for English)
+    scores_9: dict = {}   # 9 coarse scores (for Vietnamese)
     toxicity_score: float = 0.0
     toxicity_binary: bool = False
     sarcasm_score: float = 0.0
     sarcasm_binary: bool = False
-    intent: str = "unknown"
-    confidence: float = 0.0
-    language: str = "en"
-    source: str = "backend"
+    source: str = "goemotions_28"
+    model: str = "xlm-roberta-base+lora+goemotions28"
+    num_labels: int = 28
     processing_time_ms: float = 0.0
 
 
@@ -51,19 +58,6 @@ class BatchAnalyzeResponse(BaseModel):
     """Response model for batch analysis."""
     results: List[AnalyzeResponse]
     total_processing_time_ms: float = 0.0
-    cache_stats: dict = {}
-
-
-# ====================================================
-# Dependency: Get model manager from app state
-# ====================================================
-
-async def get_model_manager(request: Request):
-    """Get the EmotionModelManager instance from FastAPI app state."""
-    from app.main import model_manager
-    if model_manager is None:
-        raise HTTPException(status_code=503, detail="Model not loaded yet")
-    return model_manager
 
 
 # ====================================================
@@ -71,41 +65,43 @@ async def get_model_manager(request: Request):
 # ====================================================
 
 @router.post("", response_model=AnalyzeResponse)
-async def analyze_text(
-    request: AnalyzeRequest,
-    manager=Depends(get_model_manager),
-):
+async def analyze_endpoint(request: AnalyzeRequest):
     """
-    Analyze a single text for emotions.
+    Analyze a single text for emotions using the 28-label GoEmotions model.
     
-    Uses the multi-task XLM-RoBERTa model to detect:
-    - Primary emotion (joy, anger, sadness, anxiety, fear, surprise, neutral, toxic, sarcastic)
-    - Toxicity level
-    - Sarcasm level
-    - Intent
-    - Language
+    For English text (auto-detected): returns 28 fine-grained emotion scores
+    For Vietnamese text (auto-detected): returns 9 coarse emotion scores
     
-    Returns confidence scores and timings.
+    Vietnamese uses aggregated scores from the 28-label model.
+    Dedicated Vietnamese training data coming soon.
     """
+    start = time.time()
+    
     try:
-        result: InferenceResult = manager.analyze(
+        infer = get_inference()
+        result = infer.classify(
             text=request.text,
-            return_all_probs=request.return_all_probs,
+            output_mode=request.output_mode,  # None = auto
         )
+        
+        processing_time = (time.time() - start) * 1000
         
         return AnalyzeResponse(
             text=request.text[:100] + "..." if len(request.text) > 100 else request.text,
-            primary_emotion=result.primary_emotion,
-            emotions=result.emotions if request.return_all_probs else {},
-            toxicity_score=result.toxicity_score,
-            toxicity_binary=result.toxicity_binary,
-            sarcasm_score=result.sarcasm_score,
-            sarcasm_binary=result.sarcasm_binary,
-            intent=result.intent,
-            confidence=result.confidence,
-            language=result.language,
-            source="backend",
-            processing_time_ms=result.processing_time_ms,
+            primary_emotion=result.get("primary_emotion", "neutral"),
+            confidence=result.get("confidence", 0.0),
+            label_type=result.get("label_type", "fine"),
+            language=result.get("language", "en"),
+            scores_28=result.get("scores_28", {}),
+            scores_9=result.get("scores_9", {}),
+            toxicity_score=result.get("toxicity_score", 0.0),
+            toxicity_binary=result.get("toxicity_binary", False),
+            sarcasm_score=result.get("sarcasm_score", 0.0),
+            sarcasm_binary=result.get("sarcasm_binary", False),
+            source=result.get("source", "goemotions_28"),
+            model=result.get("model", "xlm-roberta-base+lora+goemotions28"),
+            num_labels=result.get("num_labels", 28),
+            processing_time_ms=processing_time,
         )
     except Exception as e:
         logger.error(f"Analysis failed: {e}", exc_info=True)
@@ -113,49 +109,69 @@ async def analyze_text(
 
 
 @router.post("/batch", response_model=BatchAnalyzeResponse)
-async def analyze_batch(
-    request: BatchAnalyzeRequest,
-    manager=Depends(get_model_manager),
-):
+async def analyze_batch(request: BatchAnalyzeRequest):
     """
-    Analyze multiple texts in batch for efficiency.
+    Analyze multiple texts in batch.
     
-    Processes up to 100 texts at once, leveraging GPU batching
-    for maximum throughput. Returns individual results plus
-    cache statistics.
+    Each text is analyzed independently with language auto-detection.
+    English → 28 fine-grained labels, Vietnamese → 9 coarse labels.
     """
-    import time
     start = time.time()
     
     try:
-        results = manager.analyze_batch(
-            texts=request.texts,
-            batch_size=min(len(request.texts), 32),
-        )
+        infer = get_inference()
+        results = []
+        
+        for text in request.texts:
+            result = infer.classify(text=text, output_mode=None)
+            results.append(result)
         
         response_results = [
             AnalyzeResponse(
-                text=text[:100] + "..." if len(text) > 100 else text,
-                primary_emotion=r.primary_emotion,
-                emotions=r.emotions if request.return_all_probs else {},
-                toxicity_score=r.toxicity_score,
-                toxicity_binary=r.toxicity_binary,
-                sarcasm_score=r.sarcasm_score,
-                sarcasm_binary=r.sarcasm_binary,
-                intent=r.intent,
-                confidence=r.confidence,
-                language=r.language,
-                source="backend",
-                processing_time_ms=r.processing_time_ms,
+                text=t[:100] + "..." if len(t) > 100 else t,
+                primary_emotion=r.get("primary_emotion", "neutral"),
+                confidence=r.get("confidence", 0.0),
+                label_type=r.get("label_type", "fine"),
+                language=r.get("language", "en"),
+                scores_28=r.get("scores_28", {}),
+                scores_9=r.get("scores_9", {}),
+                toxicity_score=r.get("toxicity_score", 0.0),
+                toxicity_binary=r.get("toxicity_binary", False),
+                sarcasm_score=r.get("sarcasm_score", 0.0),
+                sarcasm_binary=r.get("sarcasm_binary", False),
+                source=r.get("source", "goemotions_28"),
+                model=r.get("model", "xlm-roberta-base+lora+goemotions28"),
+                num_labels=r.get("num_labels", 28),
+                processing_time_ms=0.0,
             )
-            for text, r in zip(request.texts, results)
+            for t, r in zip(request.texts, results)
         ]
         
         return BatchAnalyzeResponse(
             results=response_results,
             total_processing_time_ms=(time.time() - start) * 1000,
-            cache_stats=manager.get_cache_stats(),
         )
     except Exception as e:
         logger.error(f"Batch analysis failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
+
+
+@router.get("/labels")
+async def get_labels():
+    """
+    Get available emotion labels.
+    Returns 28 fine-grained labels for English and 9 coarse for Vietnamese.
+    """
+    return {
+        "english": {
+            "num_labels": 28,
+            "labels": GOEMOTIONS_28,
+            "description": "28 fine-grained GoEmotions labels (trained model)",
+        },
+        "vietnamese": {
+            "num_labels": 9,
+            "labels": COARSE_EMOTIONS,
+            "description": "9 coarse emotions (aggregated from 28-label model - no Vietnamese training data yet)",
+            "note": "Dedicated Vietnamese emotion dataset and training coming soon",
+        },
+    }

@@ -1,613 +1,344 @@
-# Emotion Lens - AI-Powered Social Media Emotion Detection
+# Emotion Lens - AI Social Media Emotion Detector
 
-> **Production-grade Chrome Extension** that analyzes social media text in real-time, detecting emotions across Vietnamese and English with visual overlays on Facebook, YouTube, Reddit, TikTok, Threads, Twitter/X.
+> **Chrome Extension** phát hiện cảm xúc trên mạng xã hội real-time.
+> Dùng **GoEmotions 28-label model** (XLM-RoBERTa + LoRA) cho tiếng Anh.
+> Hiển thị nhãn cảm xúc trực tiếp trên Facebook, YouTube, Reddit, TikTok, Twitter/X.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Chrome](https://img.shields.io/badge/chrome-v109+-green)
-![Python](https://img.shields.io/badge/python-3.11-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Model](https://img.shields.io/badge/model-GoEmotions_28-green)
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![Chrome](https://img.shields.io/badge/chrome-109+-green)
 
 ---
 
-## 📋 Table of Contents
+## 📸 Tính năng chính
 
-- [Architecture Overview](#-architecture-overview)
-- [Why This Tech Stack](#-why-this-tech-stack)
-- [Project Structure](#-project-structure)
-- [Chrome Extension](#-chrome-extension)
-- [Backend API](#-backend-api)
-- [AI Model Architecture](#-ai-model-architecture)
-- [Database Schema](#-database-schema)
-- [Continuous Learning Pipeline](#-continuous-learning-pipeline)
-- [Slang Detection System](#-slang-detection-system)
+| Tính năng | Mô tả |
+|-----------|-------|
+| **28 emotions** | Phát hiện 28 cảm xúc chi tiết từ GoEmotions (admiration, amusement, anger, joy, love, sadness, surprise, neutral...) |
+| **Real-time badges** | Hiển thị icon + tên cảm xúc ngay trên comment/bài viết khi lướt web |
+| **Multi-platform** | Hoạt động trên Facebook, YouTube, Reddit, TikTok, Threads, Twitter/X |
+| **Dark/Light mode** | Tự động theo theme trình duyệt |
+| **Local + Backend** | Chạy local với keyword matching, hoặc kết nối backend để dùng model thật |
+
+---
+
+## 📋 Mục lục
+
+- [Cài đặt nhanh](#-cài-đặt-nhanh)
+- [Build Extension](#-build-extension)
+- [Chạy Backend (dùng model thật)](#-chạy-backend-dùng-model-thật)
+- [Cấu hình Extension](#-cấu-hình-extension)
+- [Cấu trúc dự án](#-cấu-trúc-dự-án)
+- [28 Emotions](#-28-emotions)
 - [API Reference](#-api-reference)
-- [Deployment](#-deployment)
-- [Performance Optimization](#-performance-optimization)
-- [Security Considerations](#-security-considerations)
-- [Development Setup](#-development-setup)
-- [Testing](#-testing)
-- [Scaling Strategy](#-scaling-strategy)
-- [Recommended Datasets](#-recommended-datasets)
-- [Roadmap](#-roadmap)
+- [Troubleshooting](#-troubleshooting)
 
 ---
 
-## 🏗 Architecture Overview
+## 🚀 Cài đặt nhanh
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      CHROME EXTENSION (MV3)                        │
-│                                                                     │
-│  ┌─────────┐  ┌──────────┐  ┌────────────┐  ┌──────────────────┐  │
-│  │ Popup   │  │ Sidepanel│  │ Options    │  │ Content Script   │  │
-│  │ (React) │  │ (React)  │  │ (React)    │  │ (MutationObs.)   │  │
-│  └────┬────┘  └────┬─────┘  └─────┬──────┘  └────────┬─────────┘  │
-│       └─────────┬──┴──────────────┘                   │            │
-│                 │                                      │            │
-│        ┌────────▼────────┐                  ┌─────────▼────────┐  │
-│        │ Background SW   │◄──── msg ───────│ EmotionClassifier│  │
-│        │ (Stats, Cache)  │                 │ (Transformers.js)│  │
-│        └────────┬────────┘                 │ + Rule-based     │  │
-│                 │                          └────────┬─────────┘  │
-└─────────────────│────────────────────────────────────│────────────┘
-                  │                                    │
-           ┌──────▼────────────────────────────────────▼──────┐
-           │           Optional Backend Fallback              │
-           │           (Low Confidence Inference)             │
-           └──────────────────────┬───────────────────────────┘
-                                  │
-┌─────────────────────────────────▼───────────────────────────────┐
-│                      BACKEND API (FastAPI)                      │
-│                                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────┐  │
-│  │ Analyze  │  │ Learning │  │ Slang     │  │ Health       │  │
-│  │ Routes   │  │ Routes   │  │ Routes    │  │ Routes       │  │
-│  └────┬─────┘  └────┬─────┘  └─────┬─────┘  └──────┬───────┘  │
-│       └──────────┬──┴──────────────┘                │           │
-│                  │                                  │           │
-│         ┌────────▼────────┐                  ┌──────▼───────┐  │
-│         │ Multi-Task Model│                  │ Redis Cache  │  │
-│         │ (XLM-RoBERTa)   │◄──── cache ────│              │  │
-│         │ + LoRA Heads    │                  └──────────────┘  │
-│         └────────┬────────┘                                     │
-│                  │                                              │
-│  ┌───────────────▼───────────────┐                              │
-│  │    Celery Task Queue         │                              │
-│  │  • Retraining Jobs           │                              │
-│  │  • Slang Analytics           │                              │
-│  └───────────────┬───────────────┘                              │
-│                  │                                              │
-└──────────────────│──────────────────────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────────────────────┐
-│                       DATA LAYER                                │
-│                                                                 │
-│  ┌────────────┐  ┌──────────┐  ┌───────────┐  ┌─────────────┐ │
-│  │ PostgreSQL │  │  Qdrant  │  │   Redis   │  │ File System │ │
-│  │ Analytics  │  │ Vectors  │  │   Cache   │  │ (Feedback)  │ │
-│  └────────────┘  └──────────┘  └───────────┘  └─────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+### Yêu cầu
+- **Node.js** 18+ (cho extension)
+- **Python** 3.10+ (cho backend - optional)
+- **Chrome** 109+ (cho extension)
+
+### Bước 1: Build Extension
+
+```bash
+# Vào thư mục extension
+cd extension
+
+# Cài dependencies
+npm install
+
+# Build
+npm run build
+# Hoặc: npx webpack --mode production
 ```
 
-## 🔧 Why This Tech Stack
+### Bước 2: Load vào Chrome
 
-| Technology | Why It's Chosen | Alternatives Considered |
-|---|---|---|
-| **TypeScript** | Type safety for complex extension logic. Catches bugs at compile time. | Vanilla JS (less safe), Dart (not browser-native) |
-| **React** | Efficient DOM diffing for dynamic UI. Huge ecosystem for Chrome extensions. | Vue (similar), Svelte (newer, less ecosystem) |
-| **Zustand** | Minimal boilerplate, 1KB bundle. Perfect for extension performance. | Redux (too heavy), Jotai (similar but less mature) |
-| **Transformers.js** | Runs ONNX models in-browser via WebAssembly. Zero server costs for simple cases. | TensorFlow.js (heavier), ONNX Runtime Web (lower-level) |
-| **XLM-RoBERTa** | True multilingual (100+ languages). Handles Vi-En code-switching natively. | mBERT (slightly worse multilingual), PhoBERT (Vietnamese-only) |
-| **FastAPI** | Async-native, automatic OpenAPI docs, Pydantic validation. Fastest Python web framework. | Flask (sync-only), Django (heavier) |
-| **Qdrant** | Purpose-built vector DB for semantic search. Supports filtering + vectors. | Pinecone (vendor lock-in), Milvus (heavier ops) |
-| **Redis** | Sub-millisecond cache for frequent inferences. Also serves as Celery broker. | Memcached (no pub/sub), Dragonfly (newer) |
-| **LoRA Fine-Tuning** | Updates only 0.1% of model parameters. Fast retraining, small checkpoints. | Full fine-tuning (expensive), Adapters (complex) |
+1. Mở Chrome → `chrome://extensions/`
+2. Bật **Developer mode** (góc trên phải)
+3. Click **Load unpacked**
+4. Chọn thư mục: `C:\Users\Dung\C-c-v-n-hi-n-i\extension\dist`
 
-## 📁 Project Structure
+### Bước 3: Dùng thử
 
-```
-emotion-lens/
-├── extension/                     # Chrome Extension (MV3)
-│   ├── manifest.json              # Extension configuration
-│   ├── webpack.config.js          # Build configuration
-│   ├── tsconfig.json              # TypeScript config
-│   ├── package.json               # Dependencies
-│   ├── public/
-│   │   └── icons/                 # Extension icons
-│   └── src/
-│       ├── types/
-│       │   ├── emotion.ts         # Core types & constants
-│       │   └── chrome.d.ts        # Chrome API type declarations
-│       ├── inference/
-│       │   └── emotionClassifier.ts  # AI inference engine
-│       ├── store/
-│       │   └── emotionStore.ts    # Zustand state management
-│       ├── content/
-│       │   └── contentScript.ts   # DOM observer & overlay engine
-│       ├── background/
-│       │   └── background.ts      # Service worker
-│       ├── popup/
-│       │   ├── popup.html         # Popup UI template
-│       │   └── popup.tsx          # Popup React component
-│       ├── options/               # Options page
-│       └── sidepanel/             # Side panel
-├── backend/                       # Python Backend
-│   ├── Dockerfile                 # Production container
-│   ├── requirements.txt           # Python dependencies
-│   └── app/
-│       ├── main.py                # FastAPI application
-│       ├── models/
-│       │   ├── __init__.py
-│       │   ├── emotion_model.py   # Multi-task XLM-RoBERTa
-│       │   └── training.py        # LoRA fine-tuning pipeline
-│       └── routes/
-│           ├── __init__.py
-│           ├── health.py          # Health checks
-│           ├── analyze.py         # Emotion analysis API
-│           ├── learning.py        # Continuous learning API
-│           └── slang.py           # Slang detection API
-├── database/
-│   └── init.sql                   # PostgreSQL schema
-├── docker-compose.yml             # Full stack deployment
-└── monitoring/                    # Prometheus & Grafana configs
+- Vào **Facebook, YouTube, Reddit** → các comment sẽ có badge cảm xúc 🎯
+- Click icon extension trên toolbar → xem thống kê
+- Click chuột phải icon → **Options** → tùy chỉnh settings
+
+---
+
+## 🛠 Build Extension
+
+```bash
+# === Production build ===
+cd extension
+npm install
+npx webpack --mode production
+
+# === Development (watch mode) ===
+npx webpack --mode development --watch
+
+# Output: extension/dist/
+#   - background.js     - Service worker
+#   - content.js        - Content script (chạy trên web)
+#   - popup.js          - Popup UI
+#   - options.js        - Settings page
+#   - sidepanel.js      - Side panel
+#   - chunk.*.js        - Transformers.js library
 ```
 
-## 🎯 Chrome Extension
+### File cấu hình
+| File | Mục đích |
+|------|----------|
+| `extension/webpack.config.js` | Webpack config (context, entry, output) |
+| `extension/manifest.json` | Chrome extension manifest (MV3) |
+| `extension/src/types/emotion.ts` | 28 emotion definitions, colors, icons |
+| `extension/src/inference/emotionClassifier.ts` | Emotion classifier (rule-based + Transformers.js) |
+| `extension/src/content/contentScript.ts` | DOM observer, badge rendering |
 
-### Core Components
+---
 
-#### 1. Content Script (`contentScript.ts`)
-The heart of the extension. Uses:
-- **MutationObserver** → Watches for dynamically loaded content (infinite scroll)
-- **IntersectionObserver** → Only analyzes visible elements (performance)
-- **Batch Processing** → 10 items per batch, 150ms debounce
-- **WeakSet tracking** → Prevents duplicate processing, auto garbage collection
+## 🧠 Chạy Backend (dùng model thật)
 
-```typescript
-// Performance strategy:
-// 1. New DOM nodes detected → queued
-// 2. 150ms debounce → batch accumulates
-// 3. RequestAnimationFrame → renders at vsync
-// 4. 10 items per frame → no jank
+Extension có 2 chế độ:
+1. **Local mode** (mặc định) - dùng keyword matching, nhanh nhưng không chính xác bằng
+2. **Backend mode** - dùng model **XLM-RoBERTa thật** đã train với 28 emotions
+
+### Model đã train nằm ở:
+```
+ai_nlp/training/checkpoints/emotion_model/best_model/
+├── adapter_model.safetensors   # LoRA weights
+├── classifier.pt               # 28-label classifier head
+├── config.json                 # Model config
+├── thresholds.json             # Optimized thresholds
+└── tokenizer.json              # Tokenizer
 ```
 
-#### 2. Emotion Classifier (`emotionClassifier.ts`)
-Two-stage inference:
-1. **Rule-based** (0.1ms) — Slang dictionary, emoji map, regex patterns
-2. **Transformer.js** (5-50ms) — XLM-RoBERTa via ONNX/WebAssembly
-3. **Ensemble** — Weighted blend with confidence scoring
+### Chạy Backend
 
-#### 3. Visual Overlays
-- **Highlight**: CSS `box-shadow` glow with emotion colors
-- **Badge**: Inline `<span>` with emoji + label, fades in
-- **Non-intrusive**: `pointer-events: none`, respects layout
+```bash
+cd C:\Users\Dung\C-c-v-n-hi-n-i
 
-### Emotion Colors
-
-| Emotion | Color | Glow Effect | Badge Style |
-|---|---|---|---|
-| 😡 Angry | `#ef4444` | Red glow | Red bg 15% |
-| 😢 Sad | `#3b82f6` | Blue glow | Blue bg 15% |
-| ✨ Positive | `#22c55e` | Green glow | Green bg 15% |
-| 😰 Anxiety | `#f97316` | Orange glow | Orange bg 15% |
-| 😲 Surprise | `#a855f7` | Purple glow | Purple bg 15% |
-| 🎭 Sarcasm | `#d946ef` | Pink glow | Pink bg 15% |
-| ☠ Toxic | `#dc2626` | Red glow | Red bg 15% |
-| 😐 Neutral | `#6b7280` | None | Gray bg 10% |
-
-## 🧠 AI Model Architecture
-
-### Multi-Task Learning Design
-
-```
-                    ┌─────────────────────────┐
-                    │      Input Text          │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │    XLM-RoBERTa Encoder   │
-                    │   (Shared, frozen base) │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │     Pooled [CLS]         │
-                    └────────────┬────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-  ┌──────▼──────┐       ┌───────▼───────┐       ┌──────▼──────┐
-  │  Emotion    │       │   Toxicity    │       │   Sarcasm   │
-  │   Head      │       │    Head       │       │    Head     │
-  │  (9-class)  │       │  (binary+reg) │       │ (binary+reg)│
-  └──────┬──────┘       └───────┬───────┘       └──────┬──────┘
-         │                      │                       │
-  ┌──────▼──────┐       ┌───────▼───────┐       ┌──────▼──────┐
-  │  Joy        │       │  Binary: 0.87 │       │ Binary: 0.12│
-  │  Anger      │       │  Score: 0.73  │       │ Score: 0.08 │
-  │  Sadness    │       └───────────────┘       └─────────────┘
-  │  Anxiety    │
-  │  Fear       │
-  │  Surprise   │
-  │  Neutral    │
-  │  Toxic      │
-  │  Sarcastic  │
-  └─────────────┘
+set PYTHONPATH=C:\Users\Dung\C-c-v-n-hi-n-i\backend
+C:\Users\Dung\anaconda3\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir C:\Users\Dung\C-c-v-n-hi-n-i\backend
 ```
 
-### Model Details
-- **Base**: XLM-RoBERTa-base (279M params)
-- **LoRA**: Rank 8, Alpha 32 — only 0.3M trainable params
-- **4 Task Heads**: Emotion (9-class), Toxicity (2-out), Sarcasm (2-out), Intent (8-class)
-- **Loss**: Weighted multi-task with label smoothing (0.1)
-- **Optimization**: AdamW with linear warmup schedule
-
-### Inference Flow
-
+Backend sẽ start và load model (khoảng 5-10 giây):
 ```
-┌──────────┐    High Confidence?    ┌──────────┐
-│  Local   │ ────────── YES ──────►│  Return  │
-│  Model   │                       │  Result  │
-│  (0.1ms) │                       └──────────┘
-└────┬─────┘
-     │ NO (confidence < 35%)
-     ▼
-┌──────────┐    ┌──────────┐       ┌──────────┐
-│  Backend │ ──►│  Cache   │ ────►│  Return  │
-│  API     │    │  Miss?   │       │  Result  │
-└──────────┘    └──────────┘       └──────────┘
-     │
-     ▼
-┌──────────┐
-│ Full     │
-│ XLM-R    │
-│ Inference│
-│ (10-50ms)│
-└──────────┘
+INFO:     Uvicorn running on http://0.0.0.0:8001
+INFO:     GoEmotions 28-label model loaded on cuda
 ```
 
-## 💾 Database Schema
+### Kiểm tra Backend
 
-### PostgreSQL (Analytics & State)
-
-```
-analysis_results        feedback_data           slang_terms
-┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│ id (UUID)        │   │ id (UUID)        │   │ id (UUID)        │
-│ text_hash (SHA)  │   │ text             │   │ term (UNIQUE)    │
-│ primary_emotion  │   │ predicted_emo    │   │ language         │
-│ emotion_scores   │   │ corrected_emo    │   │ possible_emos[]  │
-│ confidence       │   │ confidence       │   │ frequency        │
-│ platform         │   │ is_used_train    │   │ is_verified      │
-│ created_at       │   │ created_at       │   │ created_at       │
-└──────────────────┘   └──────────────────┘   └──────────────────┘
-
-model_versions          unknown_terms           user_settings
-┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│ id (UUID)        │   │ id (UUID)        │   │ id (UUID)        │
-│ version (UNIQUE) │   │ term             │   │ user_id (UNIQUE) │
-│ metrics (JSONB)  │   │ context          │   │ settings (JSONB) │
-│ status           │   │ frequency        │   │ created_at       │
-│ val_accuracy     │   │ last_seen        │   │ updated_at       │
-│ created_at       │   │ created_at       │   └──────────────────┘
-└──────────────────┘   └──────────────────┘
+```bash
+curl -X POST "http://localhost:8001/api/analyze" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"text\":\"I love this amazing video!\"}"
 ```
 
-### Qdrant Vector Database
-Stores text embeddings for:
-- Similar slang detection (semantic search)
-- Clustering unknown terms
-- Duplicate detection
-
-## 🔄 Continuous Learning Pipeline
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    FEEDBACK LOOP                                │
-│                                                                 │
-│  User Sees           User Corrects          Feedback Saved      │
-│  Wrong Emotion       Emotion Label          (JSONL → PG)       │
-│       │                    │                      │             │
-│       └────────────────────┘──────────────────────┘             │
-│                              │                                  │
-│                     ┌────────▼────────┐                        │
-│                     │  Accuracy Drops  │                       │
-│                     │  Below Threshold? │                       │
-│                     └────────┬────────┘                        │
-│                              │ YES                             │
-│                     ┌────────▼────────┐                        │
-│                     │ Trigger LoRA     │                       │
-│                     │ Fine-Tuning      │                       │
-│                     │ (3 epochs, 2e-5) │                       │
-│                     └────────┬────────┘                        │
-│                              │                                  │
-│                     ┌────────▼────────┐                        │
-│                     │ Validate on      │                       │
-│                     │ Holdout Set      │                       │
-│                     └────────┬────────┘                        │
-│                              │                                  │
-│                ┌─────────────┴─────────────┐                    │
-│                │                           │                    │
-│         PASSED ✓                    ✗ FAILED                   │
-│                │                           │                    │
-│     ┌──────────▼──────┐          ┌────────▼───────┐            │
-│     │ Deploy New      │          │ Revert to      │            │
-│     │ Model Version   │          │ Previous       │            │
-│     │ + Update Cache  │          │ + Alert        │            │
-│     └─────────────────┘          └────────────────┘            │
-└─────────────────────────────────────────────────────────────────┘
+Kết quả trả về 28 emotions scores:
+```json
+{
+  "primary_emotion": "love",
+  "scores_28": {
+    "admiration": 0.42,
+    "joy": 0.38,
+    "love": 0.39,
+    ...
+  },
+  "num_labels": 28
+}
 ```
 
-### Retraining Schedule
-- **Trigger**: Every 500 new feedback items OR accuracy drops below 75%
-- **Process**: LoRA fine-tuning (3 epochs, ~2 minutes on CPU)
-- **Validation**: 10% holdout split
-- **Deployment**: Canary → 10% traffic → 100%
+---
 
-## 🎭 Slang Detection System
+## ⚙️ Cấu hình Extension
+
+### Dùng Backend (khuyên dùng để có kết quả chính xác nhất)
+
+1. **Chạy backend** (xem hướng dẫn ở trên)
+2. Click chuột phải icon **Emotion Lens** → **Options**
+3. **Bỏ tick** ô **"Local Only (no backend)"**
+4. Đảm bảo URL là: `http://localhost:8001`
+5. Click **Save**
+6. Refresh extension ở `chrome://extensions/`
+
+### Tùy chỉnh Settings
+
+| Setting | Mô tả |
+|---------|-------|
+| **Extension Enabled** | Bật/tắt extension |
+| **Show Highlights** | Highlight màu nền cho comment có cảm xúc |
+| **Show Labels** | Hiển thị badge icon + tên cảm xúc |
+| **Toxicity Filter** | Lọc nội dung độc hại |
+| **Local Only** | Chỉ dùng local inference (không gọi backend) |
+| **Confidence Threshold** | Ngưỡng tin cậy tối thiểu (0-100%) |
+| **Sensitivity** | Độ nhạy cảm biến cảm xúc |
+| **Emotion Categories** | Bật/tắt từng emotion trong 28 labels |
+
+---
+
+## 📁 Cấu trúc dự án
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│              SLANG DETECTION PIPELINE                     │
-│                                                           │
-│  Input Text                                                │
-│  "bro cooked 💀"                                          │
-│       │                                                    │
-│       ▼                                                    │
-│  ┌─────────────┐                                           │
-│  │ Normalize   │  lowercase, remove URLs, @mentions       │
-│  └──────┬──────┘                                           │
-│         ▼                                                  │
-│  ┌─────────────┐                                           │
-│  │ Tokenize    │  words + bigrams                          │
-│  └──────┬──────┘                                           │
-│         ▼                                                  │
-│  ┌─────────────────────┐           ┌────────────────┐      │
-│  │ Known Slang Check   │──────────►│ "cooked" →     │      │
-│  │ (80+ VI/EN entries) │           │ sarcastic 0.8  │      │
-│  └──────┬──────────────┘           └────────────────┘      │
-│         │ MISS                                                  │
-│         ▼                                                  │
-│  ┌─────────────────────┐                                    │
-│  │ Unknown Term Track  │  ─► log to unknown_terms table    │
-│  │ frequency+context   │                                   │
-│  └──────┬──────────────┘                                   │
-│         │ ≥3 within 24h                                    │
-│         ▼                                                  │
-│  ┌─────────────────────┐                                    │
-│  │ Flag as "Emerging"  │  ─► send to human review         │
-│  └─────────────────────┘                                    │
-│                                                           │
-└───────────────────────────────────────────────────────────┘
+C-c-v-n-hi-n-i/
+├── extension/                          # Chrome Extension
+│   ├── manifest.json                   # Extension manifest (MV3)
+│   ├── webpack.config.js               # Build config
+│   ├── package.json                    # Dependencies
+│   ├── public/icons/                   # Extension icons
+│   ├── src/
+│   │   ├── types/emotion.ts            # 28 emotion types + visuals
+│   │   ├── inference/emotionClassifier.ts  # AI classifier
+│   │   ├── content/contentScript.ts    # DOM observer + badges
+│   │   ├── background/background.ts    # Service worker
+│   │   ├── popup/popup.tsx             # Popup UI
+│   │   ├── options/options.tsx         # Settings page
+│   │   └── sidepanel/sidepanel.tsx     # Side panel
+│   └── dist/                           # Build output
+│
+├── backend/                            # Python Backend API
+│   ├── app/
+│   │   ├── main.py                     # FastAPI app
+│   │   ├── models/inference.py         # 28-label model inference
+│   │   └── routes/analyze.py           # Analysis endpoints
+│   └── requirements.txt                # Python dependencies
+│
+├── ai_nlp/training/
+│   ├── emotion_pipeline/               # Training pipeline
+│   │   ├── config.py                   # 28-label config
+│   │   ├── model.py                    # GoEmotionsModel
+│   │   ├── trainer.py                  # Trainer
+│   │   └── pipeline.py                 # Pipeline orchestrator
+│   └── checkpoints/emotion_model/
+│       └── best_model/                 # ✅ Best trained model
+│           ├── adapter_model.safetensors
+│           ├── classifier.pt
+│           └── thresholds.json
+│
+└── frontend/                           # Web demo (Next.js)
+    └── app/page.tsx                    # Emotion analyzer UI
 ```
 
-### Example Detections
-| Text | Detected Slang | Emotion |
-|---|---|---|
-| "bro cooked 💀" | cooked, 💀 | Sarcasm |
-| "xỉu up xỉu down" | xỉu | Surprise |
-| "đỉnh nóc kịch trần" | đỉnh nóc, kịch trần | Joy |
-| "NPC energy" | NPC | Neutral/Sarcasm |
-| "hay quá ha 🙂" | 🙂 | Sarcasm |
+---
+
+## 🎯 28 Emotions
+
+| # | Emotion | Icon | Color | Group | Ví dụ |
+|---|---------|------|-------|-------|-------|
+| 1 | Admiration | 👏 | Vàng | admiration | "Amazing work!" |
+| 2 | Amusement | 😂 | Xanh | joy | "Lol that's hilarious" |
+| 3 | Anger | 😡 | Đỏ | anger | "I'm so angry right now" |
+| 4 | Annoyance | 😤 | Cam | anger | "This is so annoying" |
+| 5 | Approval | 👍 | Xanh | admiration | "I agree with you" |
+| 6 | Caring | 💚 | Xanh | love | "Take care of yourself" |
+| 7 | Confusion | 😕 | Tím | surprise | "I don't understand" |
+| 8 | Curiosity | 🤔 | Tím | surprise | "I wonder why..." |
+| 9 | Desire | 😍 | Hồng | admiration | "I want that so bad" |
+| 10 | Disappointment | 😞 | Xanh dương | sadness | "That's disappointing" |
+| 11 | Disapproval | 👎 | Cam | anger | "I don't agree" |
+| 12 | Disgust | 🤢 | Xanh lá | anger | "That's disgusting" |
+| 13 | Embarrassment | 😳 | Hồng | sadness | "I'm so embarrassed" |
+| 14 | Excitement | 🤩 | Xanh | joy | "I'm so excited!" |
+| 15 | Fear | 😨 | Tím | fear | "I'm scared" |
+| 16 | Gratitude | 🙏 | Vàng | admiration | "Thank you so much" |
+| 17 | Grief | 😭 | Xanh dương | sadness | "I miss them so much" |
+| 18 | Joy | 😊 | Xanh | joy | "I'm so happy!" |
+| 19 | Love | ❤️ | Đỏ | love | "I love you" |
+| 20 | Nervousness | 😬 | Cam | anxiety | "I'm so nervous" |
+| 21 | Optimism | 🌟 | Vàng | admiration | "Everything will be fine" |
+| 22 | Pride | 🦁 | Xanh | joy | "I'm proud of you" |
+| 23 | Realization | 💡 | Tím | surprise | "Oh I get it now" |
+| 24 | Relief | 😌 | Xanh | joy | "Thank god it's over" |
+| 25 | Remorse | 😔 | Xanh dương | sadness | "I'm sorry" |
+| 26 | Sadness | 😢 | Xanh dương | sadness | "I'm so sad" |
+| 27 | Surprise | 😲 | Tím | surprise | "Oh my god!" |
+| 28 | Neutral | 😐 | Xám | neutral | "It's okay" |
+
+---
 
 ## 📡 API Reference
 
-### Health Check
-```http
-GET /api/health
-```
-Response: `{ "status": "healthy", "uptime_seconds": 3600 }`
-
-### Emotion Analysis
-```http
-POST /api/analyze
-Content-Type: application/json
-
-{
-  "text": "bro cooked 💀",
-  "return_all_probs": false
-}
-```
+### `POST /api/analyze` - Phân tích cảm xúc
 
 ```json
 {
-  "primary_emotion": "sarcastic",
-  "emotions": {},
-  "toxicity_score": 0.12,
-  "toxicity_binary": false,
-  "sarcasm_score": 0.87,
-  "sarcasm_binary": true,
-  "intent": "joke",
-  "confidence": 0.87,
-  "language": "mixed",
-  "source": "backend",
-  "processing_time_ms": 23.4
+  "text": "I love this!",
+  "return_all_probs": true,
+  "output_mode": "fine"
 }
 ```
 
-### Batch Analysis
-```http
-POST /api/analyze/batch
+**Parameters:**
+- `text` (required): Text cần phân tích
+- `output_mode`: `"fine"` (28 labels), `"coarse"` (9 labels), `"auto"` (mặc định)
+
+**Response:**
+```json
 {
-  "texts": ["i love this", "this is terrible", "bro cooked 💀"]
+  "primary_emotion": "love",
+  "confidence": 0.85,
+  "label_type": "fine",
+  "language": "en",
+  "scores_28": { "admiration": 0.42, "love": 0.85, ... },
+  "num_labels": 28
 }
 ```
 
-### Slang Detection
-```http
-POST /api/slang/detect
+### `GET /api/analyze/labels` - Danh sách labels
+
+```json
 {
-  "text": "that's so delulu and cringe fr fr"
+  "english": {
+    "num_labels": 28,
+    "labels": ["admiration", "amusement", ...]
+  },
+  "vietnamese": {
+    "num_labels": 9,
+    "labels": ["admiration", "anger", ...],
+    "note": "Dedicated Vietnamese training coming soon"
+  }
 }
-```
-
-### Submit Feedback
-```http
-POST /api/learning/feedback
-{
-  "feedbacks": [{
-    "text": "bro cooked",
-    "predicted_emotion": "joy",
-    "corrected_emotion": "sarcastic",
-    "confidence": 0.65,
-    "language": "mixed"
-  }]
-}
-```
-
-### Trigger Retraining
-```http
-POST /api/learning/retrain
-{
-  "epochs": 3,
-  "learning_rate": 2e-5,
-  "batch_size": 16,
-  "use_lora": true
-}
-```
-
-### Get Slang Report
-```http
-GET /api/slang/report?hours=24&min_frequency=3
 ```
 
 ---
 
-## 🚢 Deployment
+## 🔧 Troubleshooting
 
-### Quick Start (Docker)
+### Extension không load được
+- **Lỗi "Filenames starting with _"**: Đã fix trong webpack.config.js (dùng `chunk.` prefix)
+- **Kiểm tra**: `chrome://extensions/` → bật Developer mode → Load unpacked → chọn `extension/dist`
+
+### Badge không hiện trên web
+1. Kiểm tra extension đã bật chưa (click icon → toggle ON)
+2. Vào Settings → Check "Show Labels" và "Show Highlights"
+3. Mở Console (F12) → xem có log `[EmotionLens]` không
+
+### Backend không start được
 ```bash
-# Clone and deploy full stack
-git clone https://github.com/yourusername/emotion-lens.git
-cd emotion-lens
-
-# Set passwords
-export POSTGRES_PASSWORD=your_secure_password
-export GRAFANA_PASSWORD=your_grafana_password
-
-# Start all services
-docker-compose up -d
-
-# Services:
-# - Backend API:   http://localhost:8000
-# - API Docs:      http://localhost:8000/docs
-# - Grafana:       http://localhost:3000
-# - Prometheus:    http://localhost:9090
-# - Flower (Celery): http://localhost:5555
-# - Qdrant:        http://localhost:6333
+# Lỗi "No module named 'app'"
+# Fix: Chạy từ thư mục backend với PYTHONPATH
+set PYTHONPATH=C:\Users\Dung\C-c-v-n-hi-n-i\backend
+C:\Users\Dung\anaconda3\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir C:\Users\Dung\C-c-v-n-hi-n-i\backend
 ```
 
-### Extension Build
-```bash
-cd extension
-npm install
-npm run build    # Outputs to extension/dist/
-# Load unpacked extension in Chrome: chrome://extensions
-```
-
-### Backend Development
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-## ⚡ Performance Optimization
-
-| Technique | Impact | Implementation |
-|---|---|---|
-| **Debounced batching** | 10x fewer Layout Thrashing | 150ms accumulate, 10 items/batch |
-| **IntersectionObserver** | Skips 60% off-screen content | rootMargin: '200px' |
-| **WeakSet dedup** | Zero memory leak | Auto GC on element removal |
-| **LRU cache** | 80% cache hit rate | Max 500 entries, oldest evicted |
-| **WebAssembly ONNX** | 5ms vs 50ms JS-only | Transformers.js with WASM |
-| **CSS animations** | GPU-composited | opacity/transform only |
-| **Rules-first** | 0.1ms vs 50ms model | Slang/emoji/pattern matching |
-
-## 🔒 Security Considerations
-
-1. **Content Security Policy**: `script-src 'self' 'wasm-unsafe-eval'` — no eval(), no CDN scripts
-2. **Host Permissions**: Scoped only to target social media domains
-3. **No Data Exfiltration**: All analysis data stays local (local-only mode)
-4. **Optional Backend**: User can disable cloud fallback
-5. **Feedback PII**: Feedback stored without user identifiers
-6. **HTTPS Only**: Backend communication requires TLS
-7. **Rate Limiting**: 100 req/min per IP for API
-8. **Input Sanitization**: All text truncated to 2000 chars
-
-## 🧪 Testing
-
-```bash
-# Extension lint
-cd extension && npx tsc --noEmit
-
-# Backend tests
-cd backend && pytest
-
-# Integration test
-curl -X POST http://localhost:8000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"text": "bro cooked 💀"}'
-```
-
-## 📈 Scaling Strategy
-
-| Scale | Strategy | Infrastructure |
-|---|---|---|
-| **1K users** | Local inference only | No backend needed |
-| **10K users** | Basic backend + Redis | 1 server + 1 Redis |
-| **100K users** | Load-balanced API + Celery | 3 API servers + 2 Celery workers |
-| **1M+ users** | GPU inference + CDN | 2 GPUs + horizontal scaling + edge |
-
-### Key Principles
-- **Local-first**: 90% of inferences happen in-browser
-- **Cache aggressively**: LRU with 80%+ hit rate
-- **Batch API calls**: Up to 100 texts per request
-- **Async training**: Background Celery tasks, zero downtime
-- **Model versioning**: Canary deployments, instant rollback
-
-## 📚 Recommended Datasets
-
-| Dataset | Language | Size | Use Case |
-|---|---|---|---|
-| **GoEmotions** | EN | 58K | Fine-grained emotion (27 classes → 9) |
-| **EmoBank** | EN | 10K | Valence-Arousal-Dominance dimensions |
-| **UIT-VSMEC** | VI | 7K | Vietnamese social media emotions |
-| **ViHSD** | VI | 33K | Hate speech / toxicity detection |
-| **Hoffmann Sarcasm** | EN | 5K | Sarcasm detection |
-| **iSarcasm** | EN | 4K | Sarcasm in Twitter |
-| **Jigsaw Toxic** | EN | 223K | Toxicity classification |
-| **PhoBERT** | VI | Pretrained | Vietnamese language model |
-
-### Recommended Pretrained Models
-| Model | Params | Languages | Notes |
-|---|---|---|---|
-| `XLM-RoBERTa-base` | 279M | 100+ | Best multilingual balance |
-| `XLM-RoBERTa-large` | 560M | 100+ | Highest accuracy, 2x slower |
-| `PhoBERT-base` | 135M | VI only | Best for Vietnamese-only tasks |
-| `mDeBERTa-v3-base` | 278M | 100+ | Slightly better than XLM-R |
-
-## 🛣 Roadmap
-
-- [ ] **v1.1** — Visual sentiment heatmap for threads
-- [ ] **v1.2** — Emotion timeline tracking per user
-- [ ] **v1.3** — Firefox + Edge extension ports
-- [ ] **v1.4** — Real-time collaborative slang labeling (crowdsourcing)
-- [ ] **v2.0** — Multi-modal: image + text emotion analysis
-- [ ] **v2.1** — Privacy-preserving federated learning for fine-tuning
-- [ ] **v2.2** — Community slang marketplace (share slang dictionaries)
+### Model không load được
+- Kiểm tra file model tồn tại: `ai_nlp/training/checkpoints/emotion_model/best_model/`
+- Phải có: `adapter_model.safetensors`, `classifier.pt`, `config.json`
+- Backend log sẽ hiển thị lỗi chi tiết
 
 ---
 
 ## 📄 License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License
 
-## 👥 Team
+## 👨‍💻 Developer
 
-- **Dũng** — AI/NLP Models, Training Pipeline
-- **Tú** — Frontend, Extension UI, Visual Design
-- **Backend** — API Design, Infrastructure
-
----
-
-*Built with ❤️ for understanding internet culture better, one emotion at a time.*
+**Dũng** - AI/NLP Models, Training Pipeline, Extension

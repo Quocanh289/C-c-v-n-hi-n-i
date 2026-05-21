@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.routes import analyze, learning, slang, health
-from app.models.emotion_model import EmotionModelManager
+from app.models.inference import GoEmotionsInference, get_inference
 
 # Configure logging
 logging.basicConfig(
@@ -24,36 +24,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global model manager
-model_manager: EmotionModelManager | None = None
+# Global inference instance (lazy-loaded via get_inference)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle application lifecycle: model loading on startup, cleanup on shutdown."""
-    global model_manager
+    """Handle application lifecycle: pre-load model on startup."""
+    global _inference_instance
     
     # Startup
     logger.info("Starting Emotion Lens Backend...")
     
-    model_path = os.getenv("EMOTION_MODEL_PATH", "models/emotion_model")
-    device = os.getenv("DEVICE", "cpu")
-    model_manager = EmotionModelManager(model_path=model_path, device=device)
-    
-    # Try to load the model; if not available, will download on first use
+    # Pre-load the GoEmotions 28-label model on startup
     try:
-        model_manager.load_model()
-        logger.info(f"Emotion model loaded successfully on {device}")
+        infer = get_inference()
+        if infer.is_loaded:
+            logger.info("GoEmotions 28-label model loaded successfully on startup")
+        else:
+            logger.warning("GoEmotions model not available on startup (will load on first request)")
     except Exception as e:
-        logger.warning(f"Could not load model on startup: {e}")
+        logger.warning(f"Could not pre-load model on startup: {e}")
         logger.info("Model will be loaded on first request")
     
     yield
     
     # Shutdown
     logger.info("Shutting down Emotion Lens Backend...")
-    if model_manager:
-        model_manager.unload_model()
 
 
 # Create FastAPI app

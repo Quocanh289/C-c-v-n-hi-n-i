@@ -11,12 +11,16 @@
       background: #f9fafb;
       color: #1f2937;
       padding: 24px;
-      max-width: 640px;
+      max-width: 800px;
       margin: 0 auto;
     }
     .options-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
     .options-header h1 { font-size: 22px; font-weight: 700; }
     .saved-badge { font-size: 13px; color: #059669; background: #d1fae5; padding: 3px 10px; border-radius: 999px; }
+    .model-banner {
+      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px;
+      padding: 14px 18px; margin-bottom: 16px; font-size: 13px; color: #0369a1; line-height: 1.6;
+    }
     .options-section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid #e5e7eb; }
     .options-section h2 { font-size: 14px; font-weight: 600; color: #6b7280; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
     .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
@@ -24,14 +28,38 @@
     .setting-row label { font-size: 14px; color: #374151; flex: 1; }
     .setting-row input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; accent-color: #6366f1; }
     .setting-row input[type="range"] { width: 200px; cursor: pointer; accent-color: #6366f1; }
-    .emotion-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .emotion-card { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 8px; border: 2px solid #e5e7eb; cursor: pointer; transition: all 0.2s; }
+    
+    /* Tab Bar */
+    .tab-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab-btn {
+      padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db;
+      background: white; font-size: 13px; font-weight: 600; cursor: pointer;
+      color: #6b7280; transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: #eef2ff; border-color: #6366f1; color: #4f46e5;
+    }
+    
+    /* 28 Emotion Grid */
+    .emotion-grid-28 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .emotion-card {
+      display: flex; align-items: center; gap: 6px; padding: 8px;
+      border-radius: 8px; border: 2px solid #e5e7eb; cursor: pointer;
+      transition: all 0.2s; font-size: 12px;
+    }
     .emotion-card.enabled { background: #f5f3ff; }
-    .emotion-card .emotion-icon { font-size: 18px; }
-    .emotion-card .emotion-name { flex: 1; font-size: 13px; font-weight: 500; }
-    .emotion-card .emotion-toggle { font-size: 12px; font-weight: 700; }
+    .emotion-card .emotion-icon { font-size: 14px; width: 20px; text-align: center; }
+    .emotion-card-info { flex: 1; display: flex; flex-direction: column; }
+    .emotion-card .emotion-name { font-size: 11px; font-weight: 600; }
+    .emotion-card .emotion-group { font-size: 9px; color: #9ca3af; }
+    .emotion-card .emotion-toggle { font-size: 11px; font-weight: 700; width: 16px; text-align: center; }
+    .emotion-grid-9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .emotion-card.coarse { padding: 12px; }
+    .emotion-card.coarse .emotion-name { font-size: 13px; font-weight: 700; }
+    
     .reset-btn { padding: 10px 20px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; cursor: pointer; font-size: 14px; }
     .reset-btn:hover { background: #fee2e2; }
+    
     @media (prefers-color-scheme: dark) {
       body { background: #111827; color: #f3f4f6; }
       .options-section { background: #1f2937; border-color: #374151; }
@@ -39,6 +67,9 @@
       .setting-row label { color: #d1d5db; }
       .emotion-card { border-color: #374151; }
       .emotion-card.enabled { background: #2e1065; }
+      .model-banner { background: #0c4a6e; border-color: #075985; color: #7dd3fc; }
+      .tab-btn { background: #1f2937; border-color: #374151; color: #9ca3af; }
+      .tab-btn.active { background: #2e1065; border-color: #7c3aed; color: #a78bfa; }
     }
   </style>
 </head>

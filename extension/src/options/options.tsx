@@ -1,15 +1,23 @@
 // ====================================================
-// Options/Settings Page (stub)
-// Full settings UI for the Emotion Lens extension
+// Options/Settings Page - Full Emotion Lens Settings
+// Shows 28 emotions for English, 9 for Vietnamese
 // ====================================================
 
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { EmotionCategory, ExtensionSettings, DEFAULT_SETTINGS, DEFAULT_EMOTION_VISUALS } from '../types/emotion';
+import {
+  EmotionCategory,
+  ExtensionSettings,
+  DEFAULT_SETTINGS,
+  DEFAULT_EMOTION_VISUALS,
+  GOEMOTIONS_28_VISUALS,
+  COARSE_EMOTIONS_VISUALS,
+} from '../types/emotion';
 
 const Options: React.FC = () => {
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState<'en' | 'vi'>('en');
 
   useEffect(() => {
     loadSettings();
@@ -17,7 +25,7 @@ const Options: React.FC = () => {
 
   const loadSettings = async () => {
     try {
-      const result = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }) as { payload?: ExtensionSettings };
+      const result = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }) as any;
       if (result?.payload) setSettings(result.payload);
     } catch (e) {
       console.warn('[Options] Using default settings', e);
@@ -50,30 +58,34 @@ const Options: React.FC = () => {
         {saved && <span className="saved-badge">✓ Saved</span>}
       </header>
 
+      {/* Model Info */}
+      <div className="model-banner">
+        <strong>Model:</strong> GoEmotions XLM-RoBERTa + LoRA (28 labels)
+        <br />
+        <strong>English:</strong> 28 fine-grained emotions
+        <br />
+        <strong>Vietnamese:</strong> 9 coarse emotions (aggregated from 28)
+      </div>
+
+      {/* General Settings */}
       <section className="options-section">
         <h2>General</h2>
-        <div className="setting-row">
-          <label>Extension Enabled</label>
-          <input type="checkbox" checked={settings.enabled} onChange={e => saveSettings({ enabled: e.target.checked })} />
-        </div>
-        <div className="setting-row">
-          <label>Show Highlights</label>
-          <input type="checkbox" checked={settings.highlightEnabled} onChange={e => saveSettings({ highlightEnabled: e.target.checked })} />
-        </div>
-        <div className="setting-row">
-          <label>Show Labels</label>
-          <input type="checkbox" checked={settings.labelsEnabled} onChange={e => saveSettings({ labelsEnabled: e.target.checked })} />
-        </div>
-        <div className="setting-row">
-          <label>Toxicity Filter</label>
-          <input type="checkbox" checked={settings.toxicityFilterEnabled} onChange={e => saveSettings({ toxicityFilterEnabled: e.target.checked })} />
-        </div>
-        <div className="setting-row">
-          <label>Local Only</label>
-          <input type="checkbox" checked={settings.localOnly} onChange={e => saveSettings({ localOnly: e.target.checked })} />
-        </div>
+        {[
+          { key: 'enabled', label: 'Extension Enabled' },
+          { key: 'highlightEnabled', label: 'Show Highlights' },
+          { key: 'labelsEnabled', label: 'Show Labels' },
+          { key: 'toxicityFilterEnabled', label: 'Toxicity Filter' },
+          { key: 'localOnly', label: 'Local Only (no backend)' },
+        ].map(({ key, label }) => (
+          <div key={key} className="setting-row">
+            <label>{label}</label>
+            <input type="checkbox" checked={(settings as any)[key]}
+              onChange={e => saveSettings({ [key]: e.target.checked } as any)} />
+          </div>
+        ))}
       </section>
 
+      {/* Sensitivity */}
       <section className="options-section">
         <h2>Sensitivity</h2>
         <div className="setting-row">
@@ -88,21 +100,61 @@ const Options: React.FC = () => {
         </div>
       </section>
 
+      {/* Emotion Categories */}
       <section className="options-section">
         <h2>Emotion Categories</h2>
-        <div className="emotion-grid">
-          {Object.entries(DEFAULT_EMOTION_VISUALS).map(([key, visual]) => (
-            <div key={key} className={`emotion-card ${settings.enabledEmotions.includes(key as EmotionCategory) ? 'enabled' : ''}`}
-              onClick={() => toggleEmotion(key as EmotionCategory)}
-              style={{ borderColor: visual.color }}>
-              <span className="emotion-icon">{visual.icon}</span>
-              <span className="emotion-name">{visual.label}</span>
-              <span className="emotion-toggle">{settings.enabledEmotions.includes(key as EmotionCategory) ? '✓' : '✗'}</span>
-            </div>
-          ))}
+        
+        {/* Tab Switcher */}
+        <div className="tab-bar">
+          <button className={`tab-btn ${tab === 'en' ? 'active' : ''}`} onClick={() => setTab('en')}>
+            🇬🇧 English · 28 Emotions
+          </button>
+          <button className={`tab-btn ${tab === 'vi' ? 'active' : ''}`} onClick={() => setTab('vi')}>
+            🇻🇳 Vietnamese · 9 Emotions
+          </button>
         </div>
+
+        {/* 28 English Emotions */}
+        {tab === 'en' && (
+          <div className="emotion-grid-28">
+            {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
+              <div key={key}
+                className={`emotion-card ${settings.enabledEmotions.includes(key as EmotionCategory) ? 'enabled' : ''}`}
+                onClick={() => toggleEmotion(key as EmotionCategory)}
+                style={{ borderColor: visual.color }}>
+                <span className="emotion-icon">{visual.icon}</span>
+                <div className="emotion-card-info">
+                  <span className="emotion-name">{visual.label}</span>
+                  <span className="emotion-group">{visual.group}</span>
+                </div>
+                <span className="emotion-toggle">
+                  {settings.enabledEmotions.includes(key as EmotionCategory) ? '✓' : '✗'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 9 Vietnamese Emotions */}
+        {tab === 'vi' && (
+          <div className="emotion-grid-9">
+            {Object.entries(COARSE_EMOTIONS_VISUALS).map(([key, visual]) => (
+              <div key={key}
+                className={`emotion-card coarse ${settings.enabledEmotions.includes(key as EmotionCategory) ? 'enabled' : ''}`}
+                onClick={() => toggleEmotion(key as EmotionCategory)}
+                style={{ borderColor: visual.color }}>
+                <span className="emotion-icon">{visual.icon}</span>
+                <span className="emotion-name">{visual.label}</span>
+                <span className="emotion-toggle">
+                  {settings.enabledEmotions.includes(key as EmotionCategory) ? '✓' : '✗'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
+      {/* Reset */}
       <section className="options-section">
         <h2>Reset</h2>
         <button className="reset-btn" onClick={async () => {

@@ -12,12 +12,10 @@ module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
 
   return {
+    context: __dirname,  // Always resolve from extension directory
     entry: {
-      // Core scripts
       background: './src/background/background.ts',
       content: './src/content/contentScript.ts',
-
-      // UI pages
       popup: './src/popup/popup.tsx',
       options: './src/options/options.tsx',
       sidepanel: './src/sidepanel/sidepanel.tsx',
@@ -25,6 +23,8 @@ module.exports = (env, argv) => {
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: '[name].js',
+      // Chrome blocks filenames starting with '_' - use safe prefix
+      chunkFilename: 'chunk.[id].[contenthash:8].js',
       clean: true,
     },
     resolve: {
@@ -64,6 +64,11 @@ module.exports = (env, argv) => {
           type: 'asset/resource',
         },
       ],
+    },
+    // Disable code splitting to avoid Chrome's _-prefixed filename restriction
+    optimization: {
+      splitChunks: false,
+      chunkIds: 'named',
     },
     plugins: [
       // Copy static assets

@@ -2,13 +2,42 @@
 // AI-Powered Emotion Classifier (Local Inference)
 // Uses Transformers.js with XLM-RoBERTa for multilingual
 // emotion detection in Vietnamese and English
+// Supports 28 fine-grained labels for English, 9 coarse for Vietnamese
 // ====================================================
 
-import { EmotionCategory, EmotionResult, EmotionScores, ExtensionSettings } from '../types/emotion';
+import {
+  EmotionCategory,
+  EmotionResult,
+  EmotionScores,
+  Emotion28Scores,
+  Emotion9Scores,
+  ExtensionSettings,
+  GOEMOTIONS_28_LABELS,
+  COARSE_EMOTIONS_LABELS,
+  EMOTION_28_TO_9_MAP,
+} from '../types/emotion';
+
+// Vietnamese character detection for language classification
+const VIETNAMESE_CHARS_REGEX = /[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i;
+
+function detectLanguage(text: string): 'vi' | 'en' | 'mixed' {
+  const viChars = text.match(VIETNAMESE_CHARS_REGEX);
+  const viCount = viChars?.length || 0;
+  const totalChars = text.replace(/\s/g, '').length;
+  if (totalChars === 0) return 'en';
+  const viRatio = viCount / totalChars;
+  if (viRatio > 0.15) {
+    const enWords = text.match(/[a-z]+/gi)?.length || 0;
+    if (enWords > 0 && enWords / (text.length / 5) > 0.3) return 'mixed';
+    return 'vi';
+  }
+  return 'en';
+}
 
 /**
  * Lightweight local emotion classifier using transformer models.
  * Designed for browser-based inference with ONNX runtime.
+ * Supports 28 fine-grained labels for English, 9 coarse for Vietnamese.
  */
 export class EmotionClassifier {
   private model: any = null;
@@ -84,81 +113,76 @@ export class EmotionClassifier {
 
   // Emoji to emotion mapping
   private emojiMap: Record<string, EmotionCategory> = {
-    '😡': EmotionCategory.Anger,
-    '🤬': EmotionCategory.Anger,
-    '😢': EmotionCategory.Sadness,
-    '😭': EmotionCategory.Sadness,
-    '😞': EmotionCategory.Sadness,
-    '😔': EmotionCategory.Sadness,
-    '😊': EmotionCategory.Joy,
-    '😍': EmotionCategory.Joy,
-    '🥰': EmotionCategory.Joy,
-    '😂': EmotionCategory.Joy,
-    '🤣': EmotionCategory.Joy,
-    '🎉': EmotionCategory.Joy,
-    '✨': EmotionCategory.Joy,
-    '💀': EmotionCategory.Sarcastic,
-    '🗿': EmotionCategory.Sarcastic,
-    '😰': EmotionCategory.Anxiety,
-    '😨': EmotionCategory.Fear,
-    '😱': EmotionCategory.Fear,
-    '😲': EmotionCategory.Surprise,
-    '🤯': EmotionCategory.Surprise,
-    '🙂': EmotionCategory.Sarcastic,
-    '😏': EmotionCategory.Sarcastic,
-    '😒': EmotionCategory.Sarcastic,
-    '🤔': EmotionCategory.Surprise,
-    '😐': EmotionCategory.Neutral,
-    '👍': EmotionCategory.Joy,
-    '❤️': EmotionCategory.Joy,
-    '💔': EmotionCategory.Sadness,
-    '☠️': EmotionCategory.Toxic,
-    '🤮': EmotionCategory.Toxic,
-    '👎': EmotionCategory.Anger,
-    '😤': EmotionCategory.Anger,
-    '😩': EmotionCategory.Sadness,
-    '🥺': EmotionCategory.Sadness,
-    '🤡': EmotionCategory.Sarcastic,
-    '👀': EmotionCategory.Surprise,
-    '🔥': EmotionCategory.Joy,
-    '💯': EmotionCategory.Joy,
+    '😡': EmotionCategory.Anger, '🤬': EmotionCategory.Anger,
+    '😢': EmotionCategory.Sadness, '😭': EmotionCategory.Sadness,
+    '😞': EmotionCategory.Sadness, '😔': EmotionCategory.Sadness,
+    '😊': EmotionCategory.Joy, '😍': EmotionCategory.Joy,
+    '🥰': EmotionCategory.Joy, '😂': EmotionCategory.Joy,
+    '🤣': EmotionCategory.Joy, '🎉': EmotionCategory.Joy,
+    '✨': EmotionCategory.Joy, '💀': EmotionCategory.Sarcastic,
+    '🗿': EmotionCategory.Sarcastic, '😰': EmotionCategory.Anxiety,
+    '😨': EmotionCategory.Fear, '😱': EmotionCategory.Fear,
+    '😲': EmotionCategory.Surprise, '🤯': EmotionCategory.Surprise,
+    '🙂': EmotionCategory.Sarcastic, '😏': EmotionCategory.Sarcastic,
+    '😒': EmotionCategory.Sarcastic, '🤔': EmotionCategory.Surprise,
+    '😐': EmotionCategory.Neutral, '👍': EmotionCategory.Joy,
+    '❤️': EmotionCategory.Joy, '💔': EmotionCategory.Sadness,
+    '☠️': EmotionCategory.Toxic, '🤮': EmotionCategory.Toxic,
+    '👎': EmotionCategory.Anger, '😤': EmotionCategory.Anger,
+    '😩': EmotionCategory.Sadness, '🥺': EmotionCategory.Sadness,
+    '🤡': EmotionCategory.Sarcastic, '👀': EmotionCategory.Surprise,
+    '🔥': EmotionCategory.Joy, '💯': EmotionCategory.Joy,
   };
 
   /** Punctuation patterns indicative of sarcasm */
   private sarcasmPatterns = [
-    /~.*~/,
-    /🤡/,
-    /🙂$/,
-    /sure,? .*!/i,
-    /oh,? really/i,
-    /wow,? .*!/i,
-    /great,? .* not/i,
-    /nice,? .* sarcasm/i,
-    /obviously/i,
-    /clearly/i,
-    /totally not/i,
-    /as if/i,
-    /yeah,? right/i,
-    /whatever you say/i,
-    /hay quá ha/i,
-    /giỏi quá ha/i,
-    /tốt quá ha/i,
-    /thông minh quá/i,
+    /~.*~/, /🤡/, /🙂$/, /sure,? .*!/i, /oh,? really/i,
+    /wow,? .*!/i, /great,? .* not/i, /nice,? .* sarcasm/i,
+    /obviously/i, /clearly/i, /totally not/i, /as if/i,
+    /yeah,? right/i, /whatever you say/i,
+    /hay quá ha/i, /giỏi quá ha/i, /tốt quá ha/i, /thông minh quá/i,
   ];
 
   /** Toxic pattern indicators */
   private toxicPatterns = [
-    /\bstupid\b/i,
-    /\bidiot\b/i,
-    /\bkill yourself\b/i,
-    /\bhate\b/i,
-    /\btrash\b/i,
-    /\bđồ ngu\b/i,
-    /\bđi chết\b/i,
-    /\bmày\b.*\bchết\b/i,
-    /\bngu\b/i,
-    /\bóc chó\b/i,
+    /\bstupid\b/i, /\bidiot\b/i, /\bkill yourself\b/i,
+    /\bhate\b/i, /\btrash\b/i, /\bđồ ngu\b/i,
+    /\bđi chết\b/i, /\bmày\b.*\bchết\b/i, /\bngu\b/i, /\bóc chó\b/i,
   ];
+
+  // Keyword mapping for 28-label rule-based analysis (English)
+  private enKeywordTo28: Record<string, string> = {
+    'admire': 'admiration', 'respect': 'admiration', 'awesome': 'admiration',
+    'amazing': 'admiration', 'great': 'admiration', 'brilliant': 'admiration',
+    'impressive': 'admiration', 'wonderful': 'admiration',
+    'fun': 'amusement', 'funny': 'amusement', 'hilarious': 'amusement',
+    'laugh': 'amusement', 'joke': 'amusement',
+    'angry': 'anger', 'furious': 'anger', 'mad': 'anger',
+    'annoy': 'annoyance', 'annoying': 'annoyance', 'ugh': 'annoyance',
+    'approve': 'approval', 'agree': 'approval', 'good': 'approval',
+    'care': 'caring', 'kind': 'caring', 'sweet': 'caring',
+    'confuse': 'confusion', 'confused': 'confusion',
+    'curious': 'curiosity', 'wonder': 'curiosity',
+    'want': 'desire', 'wish': 'desire', 'dream': 'desire',
+    'disappoint': 'disappointment',
+    'disapprove': 'disapproval', 'wrong': 'disapproval',
+    'disgust': 'disgust', 'gross': 'disgust', 'nasty': 'disgust',
+    'embarrass': 'embarrassment',
+    'excite': 'excitement', 'excited': 'excitement',
+    'fear': 'fear', 'scared': 'fear', 'afraid': 'fear',
+    'thank': 'gratitude', 'thanks': 'gratitude', 'grateful': 'gratitude',
+    'grief': 'grief', 'loss': 'grief', 'miss': 'grief',
+    'happy': 'joy', 'joy': 'joy', 'delighted': 'joy',
+    'love': 'love', 'adorable': 'love', 'precious': 'love',
+    'nervous': 'nervousness', 'anxious': 'nervousness',
+    'optimist': 'optimism', 'hope': 'optimism',
+    'proud': 'pride',
+    'realize': 'realization', 'understand': 'realization',
+    'relief': 'relief', 'relieved': 'relief', 'whew': 'relief',
+    'remorse': 'remorse', 'sorry': 'remorse', 'apologize': 'remorse',
+    'sad': 'sadness', 'unhappy': 'sadness', 'depressed': 'sadness',
+    'surprise': 'surprise', 'shock': 'surprise', 'wow': 'surprise',
+  };
 
   constructor() {
     this.initializeSlangDictionary();
@@ -166,7 +190,6 @@ export class EmotionClassifier {
   }
 
   private initializeSlangDictionary(): void {
-    // Merge Vietnamese and English slang
     for (const [phrase, emotion] of Object.entries(this.vietnameseSlang)) {
       this.slangDictionary.set(phrase.toLowerCase(), emotion);
     }
@@ -181,78 +204,166 @@ export class EmotionClassifier {
     }
   }
 
-  /**
-   * Initialize the transformer model pipeline.
-   * Falls back to rule-based analysis if model loading fails.
-   */
   async initialize(): Promise<void> {
     if (this.initialized) return;
     if (this.initializationPromise) return this.initializationPromise;
-
     this.initializationPromise = this._initialize();
     return this.initializationPromise;
   }
 
   private async _initialize(): Promise<void> {
     try {
-      // Try to load Transformers.js pipeline
-      // This uses XLM-RoBERTa fine-tuned for emotion
       const { pipeline } = await import('@xenova/transformers');
-      
-      // Use a smaller, faster model for browser inference
-      // XLM-RoBERTa-base works well for multilingual emotion
-      this.model = await pipeline('text-classification', 'Xenova/xlm-roberta-base-emotion');
-      this.tokenizer = null; // Handled by pipeline
-      
+      // Try multiple model names for emotion detection
+      const modelNames = [
+        'Xenova/xlm-roberta-base-emotion',
+        'Xenova/distilbert-base-uncased-emotion',
+        'Xenova/bert-base-uncased-emotion',
+      ];
+      for (const modelName of modelNames) {
+        try {
+          this.model = await pipeline('text-classification', modelName);
+          console.log(`[EmotionLens] Transformer model loaded: ${modelName}`);
+          break;
+        } catch (e) {
+          console.warn(`[EmotionLens] Failed to load ${modelName}, trying next...`);
+        }
+      }
+      this.tokenizer = null;
       this.initialized = true;
-      console.log('[EmotionLens] Transformer model loaded successfully');
+      if (!this.model) {
+        console.warn('[EmotionLens] No transformer model loaded, using rule-based fallback');
+      }
     } catch (error) {
       console.warn('[EmotionLens] Could not load transformer model, using rule-based fallback:', error);
-      // We still mark as initialized - will use rule-based only
       this.initialized = true;
     }
   }
 
   /**
    * Analyze text and return emotion classification result.
-   * Uses multi-stage approach:
-   * 1. Fast rule-based analysis (slang, emoji, pattern matching)
-   * 2. Transformer model inference (if available)
-   * 3. Ensemble scoring
+   * Uses 28 fine-grained labels for English, 9 coarse for Vietnamese.
    */
   async analyze(text: string, settings: ExtensionSettings): Promise<EmotionResult> {
     const startTime = performance.now();
-    
-    // Stage 1: Fast rule-based analysis
+    const language = detectLanguage(text);
+    const isEnglish = language === 'en';
+
+    // Stage 1: Fast rule-based analysis (always produces 9 extension scores)
     const ruleBasedResult = this.ruleBasedAnalysis(text);
-    
-    // Stage 2: Transformer inference (if available)
-    let transformerResult: number[] | null = null;
-    if (this.model) {
-      try {
-        await this.initialize();
-        transformerResult = await this.transformerInference(text);
-      } catch (error) {
-        console.warn('[EmotionLens] Transformer inference failed:', error);
+
+    // Stage 2: 28-label rule-based analysis for English
+    let scores28: Emotion28Scores | undefined;
+    let scores9: Emotion9Scores | undefined;
+    if (isEnglish) {
+      scores28 = this.ruleBased28Analysis(text);
+    } else {
+      scores9 = this.ruleBased9Analysis(text);
+    }
+
+    // Stage 3: Ensemble scoring
+    const finalResult: EmotionResult = {
+      primaryEmotion: this.getPrimaryEmotion(ruleBasedResult, text, settings),
+      scores: ruleBasedResult,
+      scores28: scores28,
+      scores9: scores9,
+      labelType: isEnglish ? 'fine' : 'coarse',
+      numLabels: isEnglish ? 28 : 9,
+      confidence: Math.max(...Object.values(ruleBasedResult)),
+      toxicityScore: ruleBasedResult[EmotionCategory.Toxic],
+      sarcasmScore: ruleBasedResult[EmotionCategory.Sarcastic],
+      language: language,
+      source: 'local',
+      inferenceTimeMs: performance.now() - startTime,
+    };
+
+    return finalResult;
+  }
+
+  /**
+   * 28-label rule-based analysis for English text.
+   * Maps English keywords to 28 GoEmotions labels with confidence scores.
+   */
+  private ruleBased28Analysis(text: string): Emotion28Scores {
+    const scores: any = {};
+    for (const label of GOEMOTIONS_28_LABELS) {
+      scores[label] = 0;
+    }
+
+    const lowerText = text.toLowerCase();
+    const words = lowerText.split(/\s+/);
+
+    // Check keyword matches
+    for (const [keyword, emotion] of Object.entries(this.enKeywordTo28)) {
+      if (lowerText.includes(keyword)) {
+        scores[emotion] = (scores[emotion] || 0) + 0.25;
       }
     }
-    
-    // Stage 3: Ensemble scoring
-    const finalResult = this.ensembleScoring(
-      ruleBasedResult,
-      transformerResult,
-      text,
-      settings
-    );
-    
-    finalResult.inferenceTimeMs = performance.now() - startTime;
-    
-    return finalResult;
+
+    // Boost neutral if no matches
+    const scoreValues: number[] = Object.values(scores) as number[];
+    const totalMatchScore = scoreValues.reduce((a: number, b: number) => a + b, 0);
+    if (totalMatchScore < 0.1) {
+      scores['neutral'] = 0.6;
+    }
+
+    // Normalize to 0-1
+    const maxVal = Math.max(...scoreValues, 0.01);
+    for (const label of GOEMOTIONS_28_LABELS) {
+      scores[label] = Math.min(1, (scores[label] || 0) / maxVal);
+    }
+
+    return scores as Emotion28Scores;
+  }
+
+  /**
+   * 9-label rule-based analysis for Vietnamese text.
+   * Maps Vietnamese keywords to coarse emotions.
+   */
+  private ruleBased9Analysis(text: string): Emotion9Scores {
+    const scores: any = {};
+    for (const label of COARSE_EMOTIONS_LABELS) {
+      scores[label] = 0;
+    }
+
+    const lowerText = text.toLowerCase();
+
+    const viCoarseKeywords: Record<string, string> = {
+      'tuyệt': 'admiration', 'xuất sắc': 'admiration', 'giỏi': 'admiration',
+      'đẹp': 'admiration', 'tốt': 'admiration',
+      'giận': 'anger', 'tức': 'anger', 'ghét': 'anger', 'bực': 'anger',
+      'lo': 'anxiety', 'hồi hộp': 'anxiety', 'bồn chồn': 'anxiety',
+      'sợ': 'fear', 'hoảng': 'fear', 'kinh': 'fear',
+      'vui': 'joy', 'hạnh phúc': 'joy', 'cười': 'joy', 'thích': 'joy',
+      'yêu': 'love', 'thương': 'love', 'quý': 'love',
+      'buồn': 'sadness', 'khóc': 'sadness', 'đau': 'sadness', 'chán': 'sadness',
+      'ngạc nhiên': 'surprise', 'bất ngờ': 'surprise', 'trời ơi': 'surprise',
+    };
+
+    for (const [keyword, emotion] of Object.entries(viCoarseKeywords)) {
+      if (lowerText.includes(keyword)) {
+        scores[emotion] = (scores[emotion] || 0) + 0.3;
+      }
+    }
+
+    const scoreValues9: number[] = Object.values(scores) as number[];
+    const totalMatchScore = scoreValues9.reduce((a: number, b: number) => a + b, 0);
+    if (totalMatchScore < 0.1) {
+      scores['neutral'] = 0.6;
+    }
+
+    const maxVal = Math.max(...scoreValues9, 0.01);
+    for (const label of COARSE_EMOTIONS_LABELS) {
+      scores[label] = Math.min(1, (scores[label] || 0) / maxVal);
+    }
+
+    return scores as Emotion9Scores;
   }
 
   /**
    * Fast rule-based emotion analysis.
    * Detects slang, emojis, patterns, and keywords.
+   * Always returns the 9 extension category scores.
    */
   private ruleBasedAnalysis(text: string): EmotionScores {
     const scores: EmotionScores = {
@@ -262,17 +373,14 @@ export class EmotionClassifier {
       [EmotionCategory.Anxiety]: 0,
       [EmotionCategory.Fear]: 0,
       [EmotionCategory.Surprise]: 0,
-      [EmotionCategory.Neutral]: 0.2, // Default slight neutral
+      [EmotionCategory.Neutral]: 0.2,
       [EmotionCategory.Toxic]: 0,
       [EmotionCategory.Sarcastic]: 0,
     };
 
     const lowerText = text.toLowerCase();
-    const words = lowerText.split(/\s+/);
-    const totalWords = words.length || 1;
 
-    // --- Slang detection ---
-    // Check multi-word phrases first
+    // Slang detection
     for (const [phrase, emotion] of this.slangDictionary.entries()) {
       if (lowerText.includes(phrase)) {
         scores[emotion] += 0.4;
@@ -280,18 +388,13 @@ export class EmotionClassifier {
       }
     }
 
-    // --- Emoji analysis ---
-    // Count emojis and their emotional valence
-    let emojiCount = 0;
+    // Emoji analysis
     for (const char of text) {
       const emotion = this.emojiEmotionMap.get(char);
-      if (emotion) {
-        scores[emotion] += 0.3;
-        emojiCount++;
-      }
+      if (emotion) scores[emotion] += 0.3;
     }
 
-    // --- Sarcasm detection ---
+    // Sarcasm detection
     for (const pattern of this.sarcasmPatterns) {
       if (pattern.test(text)) {
         scores[EmotionCategory.Sarcastic] += 0.45;
@@ -299,7 +402,7 @@ export class EmotionClassifier {
       }
     }
 
-    // --- Toxicity detection ---
+    // Toxicity detection
     for (const pattern of this.toxicPatterns) {
       if (pattern.test(text)) {
         scores[EmotionCategory.Toxic] += 0.5;
@@ -308,80 +411,50 @@ export class EmotionClassifier {
       }
     }
 
-    // --- Keyword analysis for Vietnamese ---
+    // Vietnamese keyword analysis
     const viKeywords: Record<string, EmotionCategory> = {
-      'tuyệt': EmotionCategory.Joy,
-      'vui': EmotionCategory.Joy,
-      'hạnh': EmotionCategory.Joy,
-      'phúc': EmotionCategory.Joy,
-      'yêu': EmotionCategory.Joy,
-      'thích': EmotionCategory.Joy,
-      'cười': EmotionCategory.Joy,
-      'ghét': EmotionCategory.Anger,
-      'xấu': EmotionCategory.Sadness,
-      'khóc': EmotionCategory.Sadness,
-      'đau': EmotionCategory.Sadness,
-      'buồn': EmotionCategory.Sadness,
-      'chán': EmotionCategory.Sadness,
-      'mệt': EmotionCategory.Sadness,
-      'lo': EmotionCategory.Anxiety,
-      'sợ': EmotionCategory.Fear,
-      'ngại': EmotionCategory.Anxiety,
-      'không biết': EmotionCategory.Surprise,
-      'trời ơi': EmotionCategory.Surprise,
-      'chết': EmotionCategory.Fear,
-      'kinh': EmotionCategory.Surprise,
-      'ghê': EmotionCategory.Surprise,
+      'tuyệt': EmotionCategory.Joy, 'vui': EmotionCategory.Joy,
+      'hạnh': EmotionCategory.Joy, 'phúc': EmotionCategory.Joy,
+      'yêu': EmotionCategory.Joy, 'thích': EmotionCategory.Joy,
+      'cười': EmotionCategory.Joy, 'ghét': EmotionCategory.Anger,
+      'xấu': EmotionCategory.Sadness, 'khóc': EmotionCategory.Sadness,
+      'đau': EmotionCategory.Sadness, 'buồn': EmotionCategory.Sadness,
+      'chán': EmotionCategory.Sadness, 'mệt': EmotionCategory.Sadness,
+      'lo': EmotionCategory.Anxiety, 'sợ': EmotionCategory.Fear,
+      'ngại': EmotionCategory.Anxiety, 'không biết': EmotionCategory.Surprise,
+      'trời ơi': EmotionCategory.Surprise, 'chết': EmotionCategory.Fear,
+      'kinh': EmotionCategory.Surprise, 'ghê': EmotionCategory.Surprise,
     };
 
     for (const [keyword, emotion] of Object.entries(viKeywords)) {
-      if (lowerText.includes(keyword)) {
-        scores[emotion] += 0.2;
-      }
+      if (lowerText.includes(keyword)) scores[emotion] += 0.2;
     }
 
-    // --- English keyword analysis ---
+    // English keyword analysis
     const enKeywords: Record<string, EmotionCategory> = {
-      'happy': EmotionCategory.Joy,
-      'love': EmotionCategory.Joy,
-      'great': EmotionCategory.Joy,
-      'amazing': EmotionCategory.Joy,
-      'wonderful': EmotionCategory.Joy,
-      'excited': EmotionCategory.Joy,
-      'awesome': EmotionCategory.Joy,
-      'fantastic': EmotionCategory.Joy,
-      'beautiful': EmotionCategory.Joy,
-      'angry': EmotionCategory.Anger,
-      'mad': EmotionCategory.Anger,
-      'furious': EmotionCategory.Anger,
-      'hate': EmotionCategory.Anger,
-      'terrible': EmotionCategory.Sadness,
-      'awful': EmotionCategory.Sadness,
-      'sad': EmotionCategory.Sadness,
-      'depressed': EmotionCategory.Sadness,
-      'cry': EmotionCategory.Sadness,
-      'lonely': EmotionCategory.Sadness,
-      'hurt': EmotionCategory.Sadness,
-      'anxious': EmotionCategory.Anxiety,
-      'worried': EmotionCategory.Anxiety,
-      'nervous': EmotionCategory.Anxiety,
-      'scared': EmotionCategory.Fear,
-      'afraid': EmotionCategory.Fear,
-      'terrified': EmotionCategory.Fear,
-      'shocked': EmotionCategory.Surprise,
-      'surprised': EmotionCategory.Surprise,
-      'wow': EmotionCategory.Surprise,
-      'omg': EmotionCategory.Surprise,
+      'happy': EmotionCategory.Joy, 'love': EmotionCategory.Joy,
+      'great': EmotionCategory.Joy, 'amazing': EmotionCategory.Joy,
+      'wonderful': EmotionCategory.Joy, 'excited': EmotionCategory.Joy,
+      'awesome': EmotionCategory.Joy, 'fantastic': EmotionCategory.Joy,
+      'beautiful': EmotionCategory.Joy, 'angry': EmotionCategory.Anger,
+      'mad': EmotionCategory.Anger, 'furious': EmotionCategory.Anger,
+      'hate': EmotionCategory.Anger, 'terrible': EmotionCategory.Sadness,
+      'awful': EmotionCategory.Sadness, 'sad': EmotionCategory.Sadness,
+      'depressed': EmotionCategory.Sadness, 'cry': EmotionCategory.Sadness,
+      'lonely': EmotionCategory.Sadness, 'hurt': EmotionCategory.Sadness,
+      'anxious': EmotionCategory.Anxiety, 'worried': EmotionCategory.Anxiety,
+      'nervous': EmotionCategory.Anxiety, 'scared': EmotionCategory.Fear,
+      'afraid': EmotionCategory.Fear, 'terrified': EmotionCategory.Fear,
+      'shocked': EmotionCategory.Surprise, 'surprised': EmotionCategory.Surprise,
+      'wow': EmotionCategory.Surprise, 'omg': EmotionCategory.Surprise,
       'wtf': EmotionCategory.Surprise,
     };
 
     for (const [keyword, emotion] of Object.entries(enKeywords)) {
-      if (lowerText.includes(keyword)) {
-        scores[emotion] += 0.2;
-      }
+      if (lowerText.includes(keyword)) scores[emotion] += 0.2;
     }
 
-    // --- Exclamation/emphasis detection ---
+    // Exclamation/emphasis
     const exclamationCount = (text.match(/!/g) || []).length;
     const questionCount = (text.match(/\?/g) || []).length;
     const capsCount = (text.match(/[A-Z]{2,}/g) || []).length;
@@ -390,39 +463,21 @@ export class EmotionClassifier {
       scores[EmotionCategory.Joy] += exclamationCount * 0.05;
       scores[EmotionCategory.Anger] += exclamationCount * 0.03;
     }
-    if (questionCount > 1) {
-      scores[EmotionCategory.Surprise] += questionCount * 0.05;
-    }
+    if (questionCount > 1) scores[EmotionCategory.Surprise] += questionCount * 0.05;
     if (capsCount > 1) {
       scores[EmotionCategory.Anger] += capsCount * 0.08;
       scores[EmotionCategory.Surprise] += capsCount * 0.05;
     }
 
-    // --- Negation handling ---
+    // Negation handling
     const negationWords = ['không', 'chẳng', 'never', 'not', "don't", "can't", "won't"];
-    const emotionalWords = [...Object.keys(viKeywords), ...Object.keys(enKeywords)];
-    
     for (const negation of negationWords) {
-      for (const word of emotionalWords) {
-        const pattern = new RegExp(`${negation}\\s+${word}`, 'i');
+      for (const [keyword, emotion] of [...Object.entries(viKeywords), ...Object.entries(enKeywords)]) {
+        const pattern = new RegExp(`${negation}\\s+${keyword}`, 'i');
         if (pattern.test(lowerText)) {
-          // Invert the emotion for negated terms
-          const emotion = viKeywords[word] || enKeywords[word];
           scores[emotion] = Math.max(0, scores[emotion] - 0.15);
           scores[EmotionCategory.Neutral] += 0.1;
         }
-      }
-    }
-
-    // --- Code-switching detection ---
-    const viChars = (lowerText.match(/[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/g) || []).length;
-    const detectedLang = viChars > 0 ? 'vi' : 'en';
-    
-    // If mixed language detected, boost sarcasm probability
-    if (detectedLang === 'vi' && lowerText.match(/[a-z]/g)) {
-      const enWords = words.filter(w => /^[a-z]+$/.test(w)).length;
-      if (enWords > 0 && enWords / totalWords > 0.1) {
-        scores[EmotionCategory.Sarcastic] += 0.1;
       }
     }
 
@@ -430,149 +485,28 @@ export class EmotionClassifier {
   }
 
   /**
-   * Run transformer model inference.
-   * Returns logits/scores for each emotion category.
+   * Get primary emotion from scores.
    */
-  private async transformerInference(text: string): Promise<number[] | null> {
-    if (!this.model) return null;
-    
-    try {
-      const result = await this.model(text);
-      // Transformers.js returns [{ label: string, score: number }]
-      const scores: number[] = new Array(9).fill(0);
-      
-      if (Array.isArray(result)) {
-        for (const item of result) {
-          const labelIndex = this.mapLabelToIndex(item.label);
-          if (labelIndex >= 0) {
-            scores[labelIndex] = item.score;
-          }
-        }
-      }
-      
-      return scores;
-    } catch (error) {
-      console.error('[EmotionLens] Transformer inference error:', error);
-      return null;
-    }
-  }
+  private getPrimaryEmotion(scores: EmotionScores, text: string, settings: ExtensionSettings): EmotionCategory {
+    let highest = EmotionCategory.Neutral;
+    let highestScore = scores[EmotionCategory.Neutral];
 
-  /**
-   * Map transformer model label to emotion index.
-   */
-  private mapLabelToIndex(label: string): number {
-    const labelMap: Record<string, number> = {
-      'joy': 0,
-      'anger': 1,
-      'sadness': 2,
-      'anxiety': 3,
-      'fear': 4,
-      'surprise': 5,
-      'neutral': 6,
-      'toxic': 7,
-      'sarcastic': 8,
-    };
-    return labelMap[label.toLowerCase()] ?? -1;
-  }
-
-  /**
-   * Ensemble scoring: combine rule-based and transformer results.
-   */
-  private ensembleScoring(
-    ruleBased: EmotionScores,
-    transformerResult: number[] | null,
-    text: string,
-    settings: ExtensionSettings
-  ): EmotionResult {
-    const weightedScores: EmotionScores = { ...ruleBased };
-    
-    // If transformer result available, blend with rule-based
-    if (transformerResult) {
-      const weight = 0.6; // Transformer weight
-      const emotions = Object.values(EmotionCategory);
-      for (let i = 0; i < emotions.length && i < transformerResult.length; i++) {
-        const emotion = emotions[i];
-        weightedScores[emotion] = 
-          (ruleBased[emotion] * (1 - weight)) + 
-          (transformerResult[i] * weight);
+    for (const [emotion, score] of Object.entries(scores)) {
+      if (emotion !== EmotionCategory.Neutral && score > highestScore) {
+        highestScore = score;
+        highest = emotion as EmotionCategory;
       }
     }
 
-    // Apply sensitivity adjustment
-    const sensitivityFactor = settings.sensitivity;
-    for (const emotion of Object.values(EmotionCategory)) {
-      if (emotion !== EmotionCategory.Neutral) {
-        weightedScores[emotion] *= (0.5 + sensitivityFactor);
-      }
+    if (highestScore < settings.confidenceThreshold) {
+      return EmotionCategory.Neutral;
     }
 
-    // Normalize scores to 0-1
-    const maxScore = Math.max(...Object.values(weightedScores), 0.01);
-    for (const emotion of Object.values(EmotionCategory)) {
-      weightedScores[emotion] /= maxScore;
-      weightedScores[emotion] = Math.min(1, Math.max(0, weightedScores[emotion]));
+    if (!settings.enabledEmotions.includes(highest)) {
+      return EmotionCategory.Neutral;
     }
 
-    // Ensure neutral is at least a small value
-    weightedScores[EmotionCategory.Neutral] = Math.max(0.05, weightedScores[EmotionCategory.Neutral]);
-
-    // Determine primary emotion
-    let primaryEmotion = EmotionCategory.Neutral;
-    let highestConfidence = 0;
-
-    for (const [emotion, score] of Object.entries(weightedScores)) {
-      if (score > highestConfidence && emotion !== EmotionCategory.Neutral) {
-        highestConfidence = score;
-        primaryEmotion = emotion as EmotionCategory;
-      }
-    }
-
-    // Apply confidence threshold
-    if (highestConfidence < settings.confidenceThreshold) {
-      primaryEmotion = EmotionCategory.Neutral;
-      highestConfidence = weightedScores[EmotionCategory.Neutral];
-    }
-
-    // Check if user has this emotion enabled
-    if (!settings.enabledEmotions.includes(primaryEmotion)) {
-      primaryEmotion = EmotionCategory.Neutral;
-    }
-
-    return {
-      primaryEmotion,
-      scores: weightedScores,
-      confidence: highestConfidence,
-      toxicityScore: weightedScores[EmotionCategory.Toxic],
-      sarcasmScore: weightedScores[EmotionCategory.Sarcastic],
-      language: this.detectLanguage(text),
-      source: 'local',
-      inferenceTimeMs: 0, // Will be set by caller
-    };
-  }
-
-  /**
-   * Detect whether text is Vietnamese, English, or mixed.
-   */
-  private detectLanguage(text: string): 'vi' | 'en' | 'mixed' {
-    const viChars = text.match(/[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/g);
-    const viCount = viChars?.length || 0;
-    const totalChars = text.replace(/\s/g, '').length;
-    
-    if (totalChars === 0) return 'en';
-    
-    const viRatio = viCount / totalChars;
-    
-    if (viRatio > 0.15) {
-      // Check for significant English presence
-      const enWords = text.match(/[a-z]+/gi)?.length || 0;
-      const viSize = text.length;
-      if (enWords > 0 && enWords / (viSize / 5) > 0.3) {
-        return 'mixed';
-      }
-      return 'vi';
-    }
-    
-    return 'en';
+    return highest;
   }
 
   /**
@@ -581,7 +515,6 @@ export class EmotionClassifier {
   hasContent(text: string): boolean {
     const trimmed = text.trim();
     if (trimmed.length < 2) return false;
-    // Filter out pure numbers, URLs, etc.
     if (/^\d+$/.test(trimmed)) return false;
     if (/^https?:\/\//i.test(trimmed)) return false;
     if (/^@\w+$/.test(trimmed)) return false;

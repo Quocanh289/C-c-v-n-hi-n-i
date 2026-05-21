@@ -4,6 +4,7 @@
 
 /** Emotion categories detected by the system */
 export enum EmotionCategory {
+  // 9 coarse emotions (used for Vietnamese)
   Joy = 'joy',
   Anger = 'anger',
   Sadness = 'sadness',
@@ -15,15 +16,102 @@ export enum EmotionCategory {
   Sarcastic = 'sarcastic',
 }
 
-/** Confidence scores for each emotion category */
+/** 28 fine-grained GoEmotions labels (used for English) */
+export const GOEMOTIONS_28_LABELS = [
+  'admiration', 'amusement', 'anger', 'annoyance', 'approval',
+  'caring', 'confusion', 'curiosity', 'desire', 'disappointment',
+  'disapproval', 'disgust', 'embarrassment', 'excitement', 'fear',
+  'gratitude', 'grief', 'joy', 'love', 'nervousness',
+  'optimism', 'pride', 'realization', 'relief', 'remorse',
+  'sadness', 'surprise', 'neutral',
+] as const;
+
+export type GoEmotion28 = typeof GOEMOTIONS_28_LABELS[number];
+
+/** 9 coarse emotions (for Vietnamese - aggregated from 28) */
+export const COARSE_EMOTIONS_LABELS = [
+  'admiration', 'anger', 'anxiety', 'fear',
+  'joy', 'love', 'sadness', 'surprise', 'neutral',
+] as const;
+
+export type CoarseEmotion = typeof COARSE_EMOTIONS_LABELS[number];
+
+/** 28-to-9 coarse mapping */
+export const EMOTION_28_TO_9_MAP: Record<string, string> = {
+  'admiration': 'admiration',
+  'amusement': 'joy',
+  'anger': 'anger',
+  'annoyance': 'anger',
+  'approval': 'admiration',
+  'caring': 'love',
+  'confusion': 'surprise',
+  'curiosity': 'surprise',
+  'desire': 'admiration',
+  'disappointment': 'sadness',
+  'disapproval': 'anger',
+  'disgust': 'anger',
+  'embarrassment': 'sadness',
+  'excitement': 'joy',
+  'fear': 'fear',
+  'gratitude': 'admiration',
+  'grief': 'sadness',
+  'joy': 'joy',
+  'love': 'love',
+  'nervousness': 'anxiety',
+  'optimism': 'admiration',
+  'pride': 'joy',
+  'realization': 'surprise',
+  'relief': 'joy',
+  'remorse': 'sadness',
+  'sadness': 'sadness',
+  'surprise': 'surprise',
+  'neutral': 'neutral',
+};
+
+/** Visual configuration for 28 fine-grained emotions (English) */
+export interface Emotion28Visual {
+  label: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+  glowEffect: string;
+  enabled: boolean;
+  group: string; // which coarse group it belongs to
+}
+
+/** Visual configuration for 9 coarse emotions (Vietnamese) */
+export interface Emotion9Visual {
+  label: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+  glowEffect: string;
+  enabled: boolean;
+}
+
+/** Confidence scores for each emotion category (extension 9) */
 export type EmotionScores = Record<EmotionCategory, number>;
+
+/** 28-label scores (for English) */
+export type Emotion28Scores = Record<GoEmotion28, number>;
+
+/** 9-label scores (for Vietnamese) */
+export type Emotion9Scores = Record<CoarseEmotion, number>;
 
 /** Complete emotion analysis result */
 export interface EmotionResult {
   /** Primary detected emotion */
-  primaryEmotion: EmotionCategory;
-  /** All emotion scores (confidence 0-1) */
+  primaryEmotion: string;
+  /** All emotion scores (confidence 0-1) for extension's 9 categories */
   scores: EmotionScores;
+  /** 28 fine-grained scores (for English text) */
+  scores28?: Emotion28Scores;
+  /** 9 coarse scores (for Vietnamese text) */
+  scores9?: Emotion9Scores;
+  /** Label type: 'fine' (28) for English, 'coarse' (9) for Vietnamese */
+  labelType?: 'fine' | 'coarse';
+  /** Number of labels in the output */
+  numLabels?: number;
   /** Confidence level of the primary emotion */
   confidence: number;
   /** Detected toxicity level (0-1) */
@@ -100,7 +188,52 @@ export interface ExtensionSettings {
   maxCacheSize: number;
 }
 
-/** Default emotion visuals mapping */
+/** Visual mapping for 28 fine-grained GoEmotions labels (English) */
+export const GOEMOTIONS_28_VISUALS: Record<string, Emotion28Visual> = {
+  admiration:     { label: 'Admiration',     icon: '👏', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.1)', glowEffect: '0 0 8px rgba(245, 158, 11, 0.4)', enabled: true, group: 'admiration' },
+  amusement:      { label: 'Amusement',      icon: '😂', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.4)', enabled: true, group: 'joy' },
+  anger:          { label: 'Anger',          icon: '😡', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.1)', glowEffect: '0 0 8px rgba(239, 68, 68, 0.4)', enabled: true, group: 'anger' },
+  annoyance:      { label: 'Annoyance',      icon: '😤', color: '#f97316', bgColor: 'rgba(249, 115, 22, 0.1)', glowEffect: '0 0 8px rgba(249, 115, 22, 0.4)', enabled: true, group: 'anger' },
+  approval:       { label: 'Approval',       icon: '👍', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.4)', enabled: true, group: 'admiration' },
+  caring:         { label: 'Caring',         icon: '💚', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.4)', enabled: true, group: 'love' },
+  confusion:      { label: 'Confusion',      icon: '😕', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.1)', glowEffect: '0 0 8px rgba(168, 85, 247, 0.4)', enabled: true, group: 'surprise' },
+  curiosity:      { label: 'Curiosity',      icon: '🤔', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.1)', glowEffect: '0 0 8px rgba(168, 85, 247, 0.4)', enabled: true, group: 'surprise' },
+  desire:         { label: 'Desire',         icon: '😍', color: '#ec4899', bgColor: 'rgba(236, 72, 153, 0.1)', glowEffect: '0 0 8px rgba(236, 72, 153, 0.4)', enabled: true, group: 'admiration' },
+  disappointment: { label: 'Disappointment', icon: '😞', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)', glowEffect: '0 0 8px rgba(59, 130, 246, 0.4)', enabled: true, group: 'sadness' },
+  disapproval:    { label: 'Disapproval',    icon: '👎', color: '#f97316', bgColor: 'rgba(249, 115, 22, 0.1)', glowEffect: '0 0 8px rgba(249, 115, 22, 0.4)', enabled: true, group: 'anger' },
+  disgust:        { label: 'Disgust',        icon: '🤢', color: '#84cc16', bgColor: 'rgba(132, 204, 22, 0.1)', glowEffect: '0 0 8px rgba(132, 204, 22, 0.4)', enabled: true, group: 'anger' },
+  embarrassment:  { label: 'Embarrassment',  icon: '😳', color: '#f472b6', bgColor: 'rgba(244, 114, 182, 0.1)', glowEffect: '0 0 8px rgba(244, 114, 182, 0.4)', enabled: true, group: 'sadness' },
+  excitement:     { label: 'Excitement',     icon: '🤩', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.4)', enabled: true, group: 'joy' },
+  fear:           { label: 'Fear',           icon: '😨', color: '#7c3aed', bgColor: 'rgba(124, 58, 237, 0.1)', glowEffect: '0 0 8px rgba(124, 58, 237, 0.4)', enabled: true, group: 'fear' },
+  gratitude:      { label: 'Gratitude',      icon: '🙏', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.1)', glowEffect: '0 0 8px rgba(245, 158, 11, 0.4)', enabled: true, group: 'admiration' },
+  grief:          { label: 'Grief',          icon: '😭', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)', glowEffect: '0 0 8px rgba(59, 130, 246, 0.4)', enabled: true, group: 'sadness' },
+  joy:            { label: 'Joy',            icon: '😊', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.5)', enabled: true, group: 'joy' },
+  love:           { label: 'Love',           icon: '❤️', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.1)', glowEffect: '0 0 8px rgba(239, 68, 68, 0.5)', enabled: true, group: 'love' },
+  nervousness:    { label: 'Nervousness',    icon: '😬', color: '#f97316', bgColor: 'rgba(249, 115, 22, 0.1)', glowEffect: '0 0 8px rgba(249, 115, 22, 0.4)', enabled: true, group: 'anxiety' },
+  optimism:       { label: 'Optimism',       icon: '🌟', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.1)', glowEffect: '0 0 8px rgba(245, 158, 11, 0.4)', enabled: true, group: 'admiration' },
+  pride:          { label: 'Pride',          icon: '🦁', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.4)', enabled: true, group: 'joy' },
+  realization:    { label: 'Realization',    icon: '💡', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.1)', glowEffect: '0 0 8px rgba(168, 85, 247, 0.4)', enabled: true, group: 'surprise' },
+  relief:         { label: 'Relief',         icon: '😌', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.4)', enabled: true, group: 'joy' },
+  remorse:        { label: 'Remorse',        icon: '😔', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)', glowEffect: '0 0 8px rgba(59, 130, 246, 0.4)', enabled: true, group: 'sadness' },
+  sadness:        { label: 'Sadness',        icon: '😢', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)', glowEffect: '0 0 8px rgba(59, 130, 246, 0.5)', enabled: true, group: 'sadness' },
+  surprise:       { label: 'Surprise',       icon: '😲', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.1)', glowEffect: '0 0 8px rgba(168, 85, 247, 0.5)', enabled: true, group: 'surprise' },
+  neutral:        { label: 'Neutral',        icon: '😐', color: '#6b7280', bgColor: 'transparent',         glowEffect: 'none',                          enabled: true, group: 'neutral' },
+};
+
+/** Visual mapping for 9 coarse emotions (Vietnamese) */
+export const COARSE_EMOTIONS_VISUALS: Record<string, Emotion9Visual> = {
+  admiration: { label: 'Admiration', icon: '👏', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.1)', glowEffect: '0 0 8px rgba(245, 158, 11, 0.4)', enabled: true },
+  anger:      { label: 'Anger',      icon: '😡', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.1)', glowEffect: '0 0 8px rgba(239, 68, 68, 0.5)', enabled: true },
+  anxiety:    { label: 'Anxiety',    icon: '😰', color: '#f97316', bgColor: 'rgba(249, 115, 22, 0.1)', glowEffect: '0 0 8px rgba(249, 115, 22, 0.5)', enabled: true },
+  fear:       { label: 'Fear',       icon: '😨', color: '#7c3aed', bgColor: 'rgba(124, 58, 237, 0.1)', glowEffect: '0 0 8px rgba(124, 58, 237, 0.5)', enabled: true },
+  joy:        { label: 'Joy',        icon: '😊', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.1)', glowEffect: '0 0 8px rgba(34, 197, 94, 0.5)', enabled: true },
+  love:       { label: 'Love',       icon: '❤️', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.1)', glowEffect: '0 0 8px rgba(239, 68, 68, 0.5)', enabled: true },
+  sadness:    { label: 'Sadness',    icon: '😢', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)', glowEffect: '0 0 8px rgba(59, 130, 246, 0.5)', enabled: true },
+  surprise:   { label: 'Surprise',   icon: '😲', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.1)', glowEffect: '0 0 8px rgba(168, 85, 247, 0.5)', enabled: true },
+  neutral:    { label: 'Neutral',    icon: '😐', color: '#6b7280', bgColor: 'transparent',             glowEffect: 'none',                          enabled: true },
+};
+
+/** Default emotion visuals mapping (extension's 9 categories + toxic/sarcastic) */
 export const DEFAULT_EMOTION_VISUALS: Record<EmotionCategory, EmotionVisual> = {
   [EmotionCategory.Joy]: {
     label: 'Positive',
@@ -182,7 +315,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   highlightEnabled: true,
   labelsEnabled: true,
   toxicityFilterEnabled: false,
-  confidenceThreshold: 0.35,
+  confidenceThreshold: 0.15,
   sensitivity: 0.5,
   theme: 'system',
   customColors: {},
