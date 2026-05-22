@@ -98,8 +98,29 @@ export type Emotion28Scores = Record<GoEmotion28, number>;
 /** 9-label scores (for Vietnamese) */
 export type Emotion9Scores = Record<CoarseEmotion, number>;
 
+/** Mutually exclusive analysis modes */
+export type DetectionMode = 'emotion_en' | 'emotion_vi' | 'mental_health_en';
+
+/** 7 mental health labels (English) */
+export const MENTAL_HEALTH_LABELS = [
+  'Normal',
+  'Depression',
+  'Anxiety',
+  'Bipolar',
+  'Stress',
+  'Suicidal',
+  'Personality_disorder',
+] as const;
+
+export type MentalHealthLabel = typeof MENTAL_HEALTH_LABELS[number];
+
+/** 7-label mental health scores */
+export type MentalHealthScores = Record<MentalHealthLabel, number>;
+
 /** Complete emotion analysis result */
 export interface EmotionResult {
+  /** Result family */
+  analysisType?: 'emotion' | 'mental_health';
   /** Primary detected emotion */
   primaryEmotion: string;
   /** All emotion scores (confidence 0-1) for extension's 9 categories */
@@ -108,8 +129,16 @@ export interface EmotionResult {
   scores28?: Emotion28Scores;
   /** 9 coarse scores (for Vietnamese text) */
   scores9?: Emotion9Scores;
+  /** 7-class mental health scores (for English text) */
+  mentalHealthScores?: MentalHealthScores;
+  /** Severity label for mental health results */
+  severityLabel?: string;
+  /** Severity level for mental health results */
+  severityLevel?: number;
+  /** Whether the mental health result needs attention */
+  needsAttention?: boolean;
   /** Label type: 'fine' (28) for English, 'coarse' (9) for Vietnamese */
-  labelType?: 'fine' | 'coarse';
+  labelType?: 'fine' | 'coarse' | 'mental_health';
   /** Number of labels in the output */
   numLabels?: number;
   /** Confidence level of the primary emotion */
@@ -168,6 +197,8 @@ export interface ExtensionSettings {
   labelsEnabled: boolean;
   /** Enable toxic content filtering */
   toxicityFilterEnabled: boolean;
+  /** Mutually exclusive active analysis mode */
+  activeMode: DetectionMode;
   /** Minimum confidence threshold (0-1) */
   confidenceThreshold: number;
   /** Sensitivity level (0-1) */
@@ -231,6 +262,17 @@ export const COARSE_EMOTIONS_VISUALS: Record<string, Emotion9Visual> = {
   sadness:    { label: 'Sadness',    icon: '😢', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)', glowEffect: '0 0 8px rgba(59, 130, 246, 0.5)', enabled: true },
   surprise:   { label: 'Surprise',   icon: '😲', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.1)', glowEffect: '0 0 8px rgba(168, 85, 247, 0.5)', enabled: true },
   neutral:    { label: 'Neutral',    icon: '😐', color: '#6b7280', bgColor: 'transparent',             glowEffect: 'none',                          enabled: true },
+};
+
+/** Visual mapping for 7 mental health labels (English) */
+export const MENTAL_HEALTH_VISUALS: Record<MentalHealthLabel, EmotionVisual & { severity: number; severityLabel: string }> = {
+  Normal: { label: 'Normal', icon: 'OK', color: '#16a34a', bgColor: 'rgba(22, 163, 74, 0.10)', glowEffect: '0 0 8px rgba(22, 163, 74, 0.35)', enabled: true, severity: 0, severityLabel: 'Healthy' },
+  Depression: { label: 'Depression', icon: 'DEP', color: '#2563eb', bgColor: 'rgba(37, 99, 235, 0.10)', glowEffect: '0 0 8px rgba(37, 99, 235, 0.35)', enabled: true, severity: 4, severityLabel: 'Severe' },
+  Anxiety: { label: 'Anxiety', icon: 'ANX', color: '#ea580c', bgColor: 'rgba(234, 88, 12, 0.10)', glowEffect: '0 0 8px rgba(234, 88, 12, 0.35)', enabled: true, severity: 2, severityLabel: 'Moderate' },
+  Bipolar: { label: 'Bipolar', icon: 'BIP', color: '#7c3aed', bgColor: 'rgba(124, 58, 237, 0.10)', glowEffect: '0 0 8px rgba(124, 58, 237, 0.35)', enabled: true, severity: 3, severityLabel: 'Moderate-high' },
+  Stress: { label: 'Stress', icon: 'STR', color: '#dc2626', bgColor: 'rgba(220, 38, 38, 0.10)', glowEffect: '0 0 8px rgba(220, 38, 38, 0.35)', enabled: true, severity: 1, severityLabel: 'Mild' },
+  Suicidal: { label: 'Suicidal', icon: 'SOS', color: '#991b1b', bgColor: 'rgba(153, 27, 27, 0.12)', glowEffect: '0 0 10px rgba(153, 27, 27, 0.45)', enabled: true, severity: 5, severityLabel: 'Critical' },
+  Personality_disorder: { label: 'Personality Disorder', icon: 'PD', color: '#db2777', bgColor: 'rgba(219, 39, 119, 0.10)', glowEffect: '0 0 8px rgba(219, 39, 119, 0.35)', enabled: true, severity: 2, severityLabel: 'Moderate' },
 };
 
 /** Default emotion visuals mapping (extension's 9 categories + toxic/sarcastic) */
@@ -315,6 +357,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   highlightEnabled: true,
   labelsEnabled: true,
   toxicityFilterEnabled: false,
+  activeMode: 'emotion_en',
   confidenceThreshold: 0.15,
   sensitivity: 0.5,
   theme: 'system',
@@ -354,7 +397,7 @@ export enum MessageType {
 
 export interface ExtensionStats {
   totalAnalyzed: number;
-  emotionsDetected: Record<EmotionCategory, number>;
+  emotionsDetected: Record<string, number>;
   avgConfidence: number;
   avgInferenceTime: number;
   cacheSize: number;
@@ -379,8 +422,8 @@ export const PLATFORM_SELECTORS: Record<SocialPlatform, string[]> = {
   [SocialPlatform.Facebook]: [
     '[data-ad-preview="message"]',
     'div[data-ad-comet-preview="message"]',
-    'span[dir="auto"]',
-    'div[role="article"] div[style*="text-align"]',
+    'div[role="article"] [dir="auto"]',
+    'div[aria-label*="Comment"] [dir="auto"]',
   ],
   [SocialPlatform.YouTube]: [
     '#content-text',
@@ -396,7 +439,7 @@ export const PLATFORM_SELECTORS: Record<SocialPlatform, string[]> = {
   ],
   [SocialPlatform.TikTok]: [
     'div[data-e2e="comment-text"]',
-    'span[data-e2e="comment-username"]',
+    'div[data-e2e="browse-video-desc"]',
   ],
   [SocialPlatform.Threads]: [
     'div[data-pressable-container="true"] span',

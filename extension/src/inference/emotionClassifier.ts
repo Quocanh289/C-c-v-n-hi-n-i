@@ -12,6 +12,8 @@ import {
   Emotion28Scores,
   Emotion9Scores,
   ExtensionSettings,
+  MENTAL_HEALTH_LABELS,
+  MentalHealthScores,
   GOEMOTIONS_28_LABELS,
   COARSE_EMOTIONS_LABELS,
   EMOTION_28_TO_9_MAP,
@@ -263,6 +265,7 @@ export class EmotionClassifier {
 
     // Stage 3: Ensemble scoring
     const finalResult: EmotionResult = {
+      analysisType: 'emotion',
       primaryEmotion: this.getPrimaryEmotion(ruleBasedResult, text, settings),
       scores: ruleBasedResult,
       scores28: scores28,
@@ -278,6 +281,111 @@ export class EmotionClassifier {
     };
 
     return finalResult;
+  }
+
+  /**
+   * Analyze English text with the backend DeBERTa-v3 + LoRA mental-health model.
+   * The trained adapter is loaded by the backend from the best_model checkpoint.
+   */
+  async analyzeMentalHealth(text: string, settings: ExtensionSettings): Promise<EmotionResult> {
+    const startTime = performance.now();
+    const language = detectLanguage(text);
+    if (language !== 'en') {
+      return this.emptyMentalHealthResult('Normal', 0, language, performance.now() - startTime);
+    }
+
+    const baseUrl = (settings.backendApiUrl || 'http://localhost:8000').replace(/\/+$/, '');
+    const response = await fetch(`${baseUrl}/api/mental-health/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Mental health backend returned ${response.status}`);
+    }
+
+    const data = await response.json() as {
+      primary_condition?: string;
+      primary_confidence?: number;
+      all_scores?: Record<string, number>;
+      needs_attention?: boolean;
+      severity_level?: number;
+      severity_label?: string;
+      processing_time_ms?: number;
+    };
+
+    const scores = this.normalizeMentalHealthScores(data.all_scores || {});
+    const label = MENTAL_HEALTH_LABELS.includes(data.primary_condition as any)
+      ? data.primary_condition as typeof MENTAL_HEALTH_LABELS[number]
+      : 'Normal';
+
+    return {
+      analysisType: 'mental_health',
+      primaryEmotion: label,
+      scores: this.emptyEmotionScores(),
+      mentalHealthScores: scores,
+      labelType: 'mental_health',
+      numLabels: MENTAL_HEALTH_LABELS.length,
+      confidence: data.primary_confidence ?? scores[label] ?? 0,
+      toxicityScore: 0,
+      sarcasmScore: 0,
+      language,
+      source: 'backend',
+      inferenceTimeMs: performance.now() - startTime,
+      severityLevel: data.severity_level,
+      severityLabel: data.severity_label,
+      needsAttention: data.needs_attention,
+    };
+  }
+
+  private emptyEmotionScores(): EmotionScores {
+    return {
+      [EmotionCategory.Joy]: 0,
+      [EmotionCategory.Anger]: 0,
+      [EmotionCategory.Sadness]: 0,
+      [EmotionCategory.Anxiety]: 0,
+      [EmotionCategory.Fear]: 0,
+      [EmotionCategory.Surprise]: 0,
+      [EmotionCategory.Neutral]: 0,
+      [EmotionCategory.Toxic]: 0,
+      [EmotionCategory.Sarcastic]: 0,
+    };
+  }
+
+  private normalizeMentalHealthScores(rawScores: Record<string, number>): MentalHealthScores {
+    const scores = {} as MentalHealthScores;
+    for (const label of MENTAL_HEALTH_LABELS) {
+      scores[label] = Number(rawScores[label] ?? 0);
+    }
+    return scores;
+  }
+
+  private emptyMentalHealthResult(
+    label: typeof MENTAL_HEALTH_LABELS[number],
+    confidence: number,
+    language: 'vi' | 'en' | 'mixed',
+    inferenceTimeMs: number,
+  ): EmotionResult {
+    const scores = this.normalizeMentalHealthScores({});
+    scores[label] = confidence;
+    return {
+      analysisType: 'mental_health',
+      primaryEmotion: label,
+      scores: this.emptyEmotionScores(),
+      mentalHealthScores: scores,
+      labelType: 'mental_health',
+      numLabels: MENTAL_HEALTH_LABELS.length,
+      confidence,
+      toxicityScore: 0,
+      sarcasmScore: 0,
+      language,
+      source: 'local',
+      inferenceTimeMs,
+      severityLevel: 0,
+      severityLabel: 'healthy',
+      needsAttention: false,
+    };
   }
 
   /**

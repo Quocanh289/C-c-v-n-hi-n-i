@@ -18,7 +18,9 @@
     "https://*.tiktok.com/*",
     "https://*.threads.net/*",
     "https://*.twitter.com/*",
-    "https://*.x.com/*"
+    "https://*.x.com/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
   ],
   "content_scripts": [
     {

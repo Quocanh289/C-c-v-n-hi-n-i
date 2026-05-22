@@ -1,196 +1,126 @@
 // ====================================================
-// Side Panel - Emotion Analyzer + Mental Health
-// Shows 28/9 emotion analysis + 7 mental health conditions
+// Side Panel - mode control and label reference
 // ====================================================
 
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  DEFAULT_SETTINGS,
+  DetectionMode,
+  ExtensionSettings,
   GOEMOTIONS_28_VISUALS,
   COARSE_EMOTIONS_VISUALS,
-  EMOTION_28_TO_9_MAP,
+  MENTAL_HEALTH_VISUALS,
 } from '../types/emotion';
 
-// Mental Health definitions
-const MENTAL_HEALTH_LABELS = [
-  "Normal", "Depression", "Anxiety", "Bipolar",
-  "Stress", "Suicidal", "Personality_disorder",
-];
+type PanelTab = 'en' | 'vi' | 'mh';
 
-const MH_VISUALS: Record<string, { label: string; icon: string; color: string }> = {
-  Normal:               { label: "Normal",                icon: "😊", color: "#22c55e" },
-  Depression:           { label: "Depression",            icon: "😢", color: "#3b82f6" },
-  Anxiety:              { label: "Anxiety",               icon: "😰", color: "#f97316" },
-  Bipolar:              { label: "Bipolar",               icon: "🔮", color: "#a855f7" },
-  Stress:               { label: "Stress",                icon: "😫", color: "#ef4444" },
-  Suicidal:             { label: "Suicidal",              icon: "💔", color: "#dc2626" },
-  Personality_disorder: { label: "Personality Disorder",  icon: "🧩", color: "#ec4899" },
+const modeToTab = (mode: DetectionMode): PanelTab => {
+  if (mode === 'mental_health_en') return 'mh';
+  if (mode === 'emotion_vi') return 'vi';
+  return 'en';
 };
 
-const MH_SEVERITY_COLORS: Record<number, string> = {
-  0: "#22c55e", 1: "#84cc16", 2: "#f97316",
-  3: "#ef4444", 4: "#dc2626", 5: "#7f1d1d",
+const tabToMode = (tab: PanelTab): DetectionMode => {
+  if (tab === 'mh') return 'mental_health_en';
+  if (tab === 'vi') return 'emotion_vi';
+  return 'emotion_en';
 };
 
 const SidePanel: React.FC = () => {
-  const [tab, setTab] = useState<'en' | 'vi' | 'mh'>('en');
+  const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
+  const [tab, setTab] = useState<PanelTab>('en');
+
+  useEffect(() => {
+    chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }).then((result: any) => {
+      if (result?.payload) {
+        setSettings(result.payload);
+        setTab(modeToTab(result.payload.activeMode || DEFAULT_SETTINGS.activeMode));
+      }
+    }).catch(() => {});
+  }, []);
+
+  const selectTab = async (nextTab: PanelTab) => {
+    const updated = { ...settings, activeMode: tabToMode(nextTab) };
+    setTab(nextTab);
+    setSettings(updated);
+    await chrome.runtime.sendMessage({ type: 'UPDATE_SETTINGS', payload: updated });
+  };
+
+  const tabButton = (name: PanelTab, label: string, color: string) => (
+    <button onClick={() => selectTab(name)} style={{
+      flex: 1,
+      padding: '8px 10px',
+      borderRadius: 8,
+      border: `1px solid ${tab === name ? color : '#d1d5db'}`,
+      background: tab === name ? '#f8fafc' : 'white',
+      color: tab === name ? color : '#6b7280',
+      fontSize: 12,
+      fontWeight: 700,
+      cursor: 'pointer',
+    }}>
+      {label}
+    </button>
+  );
 
   return (
     <div style={{ padding: 16, fontFamily: 'system-ui, -apple-system, sans-serif', color: '#1f2937' }}>
-      <style>{`
-        body { margin: 0; background: #f9fafb; }
-        @media (prefers-color-scheme: dark) {
-          body { background: #111827; }
-        }
-      `}</style>
-      
-      {/* Header */}
-      <h1 style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>
-        📊 Emotion Lens
-      </h1>
+      <style>{`body { margin: 0; background: #f9fafb; }`}</style>
+      <h1 style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>Emotion Lens</h1>
       <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>
-        28 emotions · 7 mental health conditions
+        Only one mode scans at a time. Text is taken from posts and comments.
       </p>
 
-      {/* Tab Switcher */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
-        <button onClick={() => setTab('en')} style={{
-          flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid',
-          borderColor: tab === 'en' ? '#6366f1' : '#d1d5db',
-          background: tab === 'en' ? '#eef2ff' : 'white',
-          color: tab === 'en' ? '#4f46e5' : '#6b7280',
-          fontSize: 12, fontWeight: 600, cursor: 'pointer',
-        }}>
-          🇬🇧 28 EM
-        </button>
-        <button onClick={() => setTab('vi')} style={{
-          flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid',
-          borderColor: tab === 'vi' ? '#f97316' : '#d1d5db',
-          background: tab === 'vi' ? '#fff7ed' : 'white',
-          color: tab === 'vi' ? '#ea580c' : '#6b7280',
-          fontSize: 12, fontWeight: 600, cursor: 'pointer',
-        }}>
-          🇻🇳 9 VI
-        </button>
-        <button onClick={() => setTab('mh')} style={{
-          flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid',
-          borderColor: tab === 'mh' ? '#a855f7' : '#d1d5db',
-          background: tab === 'mh' ? '#f5f3ff' : 'white',
-          color: tab === 'mh' ? '#7c3aed' : '#6b7280',
-          fontSize: 12, fontWeight: 600, cursor: 'pointer',
-        }}>
-          🧠 MH 7
-        </button>
+        {tabButton('en', 'EN Emotion', '#4f46e5')}
+        {tabButton('vi', 'VI Emotion', '#ea580c')}
+        {tabButton('mh', 'EN Mental', '#7c3aed')}
       </div>
 
-      {/* English: 28 Emotions */}
       {tab === 'en' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+          {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
+            <div key={key} style={{ background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{visual.label}</div>
+              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{visual.group}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'vi' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+          {Object.entries(COARSE_EMOTIONS_VISUALS).map(([key, visual]) => (
+            <div key={key} style={{ background: 'white', borderRadius: 8, padding: '12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{visual.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'mh' && (
         <div>
-          <p style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8, lineHeight: 1.4 }}>
-            These 28 fine-grained emotions are from the GoEmotions dataset.
-            Detected by XLM-RoBERTa + LoRA model.
+          <p style={{ fontSize: 11, color: '#7c3aed', marginBottom: 8, lineHeight: 1.4 }}>
+            Uses the backend mental-health endpoint with DeBERTa-v3 + LoRA from best_model.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-            {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
-              <div key={key} style={{
-                background: 'white', borderRadius: 8, padding: '10px 12px',
-                border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10,
-              }}>
-                <span style={{ fontSize: 18 }}>{visual.icon}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{visual.label}</div>
-                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>
-                    <span style={{ color: visual.color }}>●</span> {visual.group}
-                  </div>
-                </div>
+            {Object.entries(MENTAL_HEALTH_VISUALS).map(([key, visual]) => (
+              <div key={key} style={{ background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>{visual.label}</div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{visual.severityLabel}</div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Vietnamese: 9 Coarse Emotions */}
-      {tab === 'vi' && (
-        <div>
-          <p style={{ fontSize: 11, color: '#f97316', marginBottom: 8, padding: '8px 12px', background: '#fff7ed', borderRadius: 8, border: '1px solid #fed7aa', lineHeight: 1.4 }}>
-            <strong>Note:</strong> Vietnamese emotions are aggregated from the 28-label model.
-            Dedicated Vietnamese training data coming soon.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-            {Object.entries(COARSE_EMOTIONS_VISUALS).map(([key, visual]) => {
-              const subEmotions = Object.entries(GOEMOTIONS_28_VISUALS)
-                .filter(([, v]) => v.group === key)
-                .map(([k]) => k);
-              return (
-                <div key={key} style={{
-                  background: 'white', borderRadius: 10, padding: '12px',
-                  border: '2px solid #e5e7eb', borderLeftColor: visual.color,
-                  borderLeftWidth: 4,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 20 }}>{visual.icon}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700 }}>{visual.label}</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#9ca3af', lineHeight: 1.5 }}>
-                    Includes: {subEmotions.join(', ')}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Mental Health: 7 Conditions */}
-      {tab === 'mh' && (
-        <div>
-          <p style={{ fontSize: 11, color: '#7c3aed', marginBottom: 8, lineHeight: 1.4 }}>
-            🧠 7-class mental health detection using DeBERTa-v3-base + LoRA.
-            Trained on 26K Reddit posts (Kaggle dataset).
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-            {MENTAL_HEALTH_LABELS.map((label) => {
-              const v = MH_VISUALS[label];
-              const severities: Record<string, number> = {
-                Normal: 0, Stress: 1, Anxiety: 2, Personality_disorder: 2,
-                Bipolar: 3, Depression: 4, Suicidal: 5,
-              };
-              const sev = severities[label] || 0;
-              const sevLabels = ["Healthy","Mild","Moderate","Mod-High","Severe","Critical"];
-              return (
-                <div key={label} style={{
-                  background: 'white', borderRadius: 8, padding: '10px 12px',
-                  borderLeft: `4px solid ${v.color}`,
-                  border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10,
-                }}>
-                  <span style={{ fontSize: 18 }}>{v.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{v.label}</div>
-                    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>
-                      <span style={{ color: MH_SEVERITY_COLORS[sev] }}>●</span> {sevLabels[sev]}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ marginTop: 12, fontSize: 10, color: '#9ca3af', padding: '8px 12px', background: '#f5f3ff', borderRadius: 8, border: '1px solid #ede9fe' }}>
-            <strong>Training:</strong> python -m ai_nlp.training.mental_health_pipeline.run --mode train
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div style={{ marginTop: 16, padding: '12px 0', borderTop: '1px solid #e5e7eb', fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
-        Emotion Lens · GoEmotions 28 + Mental Health 7
-        <br />
-        XLM-RoBERTa + LoRA · DeBERTa-v3 + LoRA
+      <div style={{ marginTop: 16, padding: '12px 0', borderTop: '1px solid #e5e7eb', fontSize: 10, color: '#6b7280', textAlign: 'center' }}>
+        Active mode: {tab === 'mh' ? 'English Mental Health' : tab === 'vi' ? 'Vietnamese Emotion' : 'English Emotion'}
       </div>
     </div>
   );
 };
 
-// Mount
 const root = document.createElement('div');
 root.id = 'root';
 document.body.appendChild(root);

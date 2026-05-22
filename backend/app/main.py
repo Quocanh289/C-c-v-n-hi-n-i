@@ -65,11 +65,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "chrome-extension://*",  # Chrome extension
-        "moz-extension://*",     # Firefox extension
         "http://localhost:3000", # Local development
         "http://localhost:5173",
     ],
+    allow_origin_regex=r"^(chrome-extension|moz-extension)://.*$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

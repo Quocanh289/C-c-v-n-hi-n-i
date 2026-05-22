@@ -12,6 +12,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_EMOTION_VISUALS,
   GOEMOTIONS_28_VISUALS,
+  MENTAL_HEALTH_LABELS,
+  MENTAL_HEALTH_VISUALS,
   ExtensionMessage,
   MessageType,
   SocialPlatform,
@@ -173,7 +175,7 @@ function findTextElements(): HTMLElement[] {
 function findGenericTextElements(): HTMLElement[] {
   const elements: HTMLElement[] = [];
   const candidates = document.querySelectorAll<HTMLElement>(
-    'p, span, div[role="article"], div[class*="comment"], div[class*="post"], div[class*="message"], li[class*="comment"]'
+    'article, div[role="article"], [data-testid*="post"], [data-testid*="comment"], div[class*="comment"], div[class*="post"], li[class*="comment"]'
   );
   candidates.forEach(el => {
     if (!processedElements.has(el) && el.textContent && el.textContent.trim().length > 10) elements.push(el);
@@ -207,7 +209,10 @@ async function processAnalysisQueue(): Promise<void> {
           processedTexts.add(text);
           processedElements.add(element);
           
-          const result = await emotionClassifier.analyze(text, settings);
+          const result = settings.activeMode === 'mental_health_en'
+            ? await emotionClassifier.analyzeMentalHealth(text, settings)
+            : await emotionClassifier.analyze(text, settings);
+          if (!isResultForActiveMode(result)) continue;
           
           if (result.confidence >= settings.confidenceThreshold) {
             applyVisualOverlay(element, text, result);
@@ -229,10 +234,10 @@ async function processAnalysisQueue(): Promise<void> {
 // ====================================================
 function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionResult): void {
   if (!settings.highlightEnabled && !settings.labelsEnabled) return;
+  const isMentalHealth = result.analysisType === 'mental_health';
   
   // Use the 28-label primary emotion if available (English text)
   const emotion28 = result.scores28 ? getTopEmotion28(result.scores28) : null;
-  const primaryLabel = emotion28 || result.primaryEmotion;
   const confidence = result.confidence;
   
   // Get visual config for the detected emotion
@@ -245,8 +250,13 @@ function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionR
   let color = '#6b7280';
   let bgColor = 'rgba(107, 114, 128, 0.1)';
   
-  // Use 28-label visuals if available (English text with fine-grained labels)
-  if (has28Label && emotion28) {
+  if (isMentalHealth && MENTAL_HEALTH_LABELS.includes(result.primaryEmotion as any)) {
+    const visual = MENTAL_HEALTH_VISUALS[result.primaryEmotion as keyof typeof MENTAL_HEALTH_VISUALS];
+    labelText = visual.label;
+    icon = visual.icon;
+    color = visual.color;
+    bgColor = visual.bgColor;
+  } else if (has28Label && emotion28) {
     const v28 = GOEMOTIONS_28_VISUALS[emotion28 as keyof typeof GOEMOTIONS_28_VISUALS];
     if (v28) {
       labelText = v28.label;
@@ -286,7 +296,9 @@ function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionR
     badge.style.background = bgColor;
     badge.style.color = color;
     badge.style.borderColor = `${color}40`;
-    badge.title = `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'en' ? '28-label' : '9-label'} model`;
+    badge.title = isMentalHealth
+      ? `${labelText}: ${(confidence * 100).toFixed(0)}% | Mental health model${result.severityLabel ? ` | ${result.severityLabel}` : ''}`
+      : `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'en' ? '28-label' : '9-label'} model`;
     badge.textContent = `${icon} ${labelText}`;
     
     overlayContainer.appendChild(badge);
@@ -321,6 +333,16 @@ function getTopEmotion28(scores28: Record<string, number>): string | null {
   return topEmotion;
 }
 
+function isResultForActiveMode(result: EmotionResult): boolean {
+  if (settings.activeMode === 'mental_health_en') {
+    return result.analysisType === 'mental_health' && result.language === 'en';
+  }
+  if (settings.activeMode === 'emotion_en') {
+    return result.analysisType !== 'mental_health' && result.language === 'en';
+  }
+  return result.analysisType !== 'mental_health' && (result.language === 'vi' || result.language === 'mixed');
+}
+
 // ====================================================
 // DOM Observation
 // ====================================================
@@ -344,7 +366,7 @@ function initMutationObserver(): void {
             }
             
             const textElements = element.querySelectorAll<HTMLElement>(
-              'p, span, div[data-testid], [dir="auto"], #content-text, [data-e2e="comment-text"]'
+              'article, div[role="article"], [data-testid*="post"], [data-testid*="comment"], div[class*="comment"], div[class*="post"], #content-text, [data-e2e="comment-text"], [data-e2e="browse-video-desc"]'
             );
             textElements.forEach(child => {
               if (!processedElements.has(child)) {
@@ -443,8 +465,13 @@ function listenForSettings(): void {
     
     switch (msg.type) {
       case MessageType.SETTINGS_UPDATED:
+        const previousMode = settings.activeMode;
         settings = msg.payload as ExtensionSettings;
         if (!settings.enabled) removeAllOverlays();
+        if (settings.enabled && previousMode !== settings.activeMode) {
+          removeAllOverlays();
+          scheduleFullScan();
+        }
         break;
         
       case MessageType.PROCESS_ELEMENT:
