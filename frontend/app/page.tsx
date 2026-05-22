@@ -15,6 +15,65 @@ const GOEMOTIONS_28 = [
   "sadness", "surprise", "neutral",
 ];
 
+// Mental Health Conditions
+const MENTAL_HEALTH_LABELS = [
+  "Normal",
+  "Depression",
+  "Anxiety",
+  "Bipolar",
+  "Stress",
+  "Suicidal",
+  "Personality_disorder",
+];
+
+const MH_COLORS: Record<string, string> = {
+  "Normal": "#22c55e",
+  "Depression": "#3b82f6",
+  "Anxiety": "#f97316",
+  "Bipolar": "#a855f7",
+  "Stress": "#ef4444",
+  "Suicidal": "#dc2626",
+  "Personality_disorder": "#ec4899",
+};
+
+const MH_ICONS: Record<string, string> = {
+  "Normal": "😊",
+  "Depression": "😢",
+  "Anxiety": "😰",
+  "Bipolar": "🔮",
+  "Stress": "😫",
+  "Suicidal": "💔",
+  "Personality_disorder": "🧩",
+};
+
+const MH_SEVERITY_MAP: Record<string, number> = {
+  "Normal": 0,
+  "Stress": 1,
+  "Anxiety": 2,
+  "Personality_disorder": 2,
+  "Bipolar": 3,
+  "Depression": 4,
+  "Suicidal": 5,
+};
+
+const MH_SEVERITY_LABELS: Record<number, string> = {
+  0: "Healthy",
+  1: "Mild",
+  2: "Moderate",
+  3: "Moderate-High",
+  4: "Severe",
+  5: "Critical",
+};
+
+const SEVERITY_COLORS: Record<number, string> = {
+  0: "#22c55e",
+  1: "#84cc16",
+  2: "#f97316",
+  3: "#ef4444",
+  4: "#dc2626",
+  5: "#7f1d1d",
+};
+
 const COARSE_EMOTIONS = [
   "admiration", "anger", "anxiety", "fear",
   "joy", "love", "sadness", "surprise", "neutral",
@@ -67,6 +126,19 @@ const EN_EMOTION_ICONS: Record<string, string> = {
   remorse: '😔', sadness: '😢', surprise: '😲', neutral: '😐',
 };
 
+// Mental health result type
+type MentalHealthResult = {
+  primary_condition: string;
+  primary_confidence: number;
+  all_scores: Record<string, number>;
+  needs_attention: boolean;
+  severity_level: number;
+  severity_label: string;
+  top_predictions: { label: string; confidence: number }[];
+  source: string;
+  num_labels: number;
+};
+
 type AnalysisResult = {
   primary_emotion: string;
   confidence: number;
@@ -90,8 +162,9 @@ function detectLanguage(text: string): 'vi' | 'en' {
 export default function Home() {
   const [text, setText] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [mhResult, setMhResult] = useState<MentalHealthResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'en' | 'vi'>('en');
+  const [activeTab, setActiveTab] = useState<'emotion_en' | 'emotion_vi' | 'mental_health'>('emotion_en');
   const [error, setError] = useState<string | null>(null);
 
   const analyzeText = useCallback(async () => {
@@ -99,38 +172,52 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setMhResult(null);
     
     const detectedLang = detectLanguage(text);
-    setActiveTab(detectedLang);
+    const isVietnamese = detectedLang === 'vi';
+    setActiveTab(isVietnamese ? 'emotion_vi' : 'emotion_en');
     
     try {
-      const response = await fetch('http://localhost:8000/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text,
-          return_all_probs: true,
-          output_mode: detectedLang === 'vi' ? 'coarse' : 'fine',
+      // Parallel calls: emotion analysis + mental health analysis
+      const [emotionRes, mhRes] = await Promise.all([
+        fetch('http://localhost:8000/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: text,
+            return_all_probs: true,
+            output_mode: isVietnamese ? 'coarse' : 'fine',
+          }),
         }),
-      });
+        fetch('http://localhost:8000/api/mental-health/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text }),
+        }),
+      ]);
       
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      if (!emotionRes.ok) throw new Error(`Emotion API error: ${emotionRes.status}`);
       
-      const data = await response.json();
+      const emotionData = await emotionRes.json();
+      let mhData: MentalHealthResult | null = null;
+      if (mhRes.ok) {
+        mhData = await mhRes.json();
+      }
       
-      // Build structured result
-      const result: AnalysisResult = {
-        primary_emotion: data.primary_emotion || 'neutral',
-        confidence: data.confidence || 0,
-        label_type: detectedLang === 'vi' ? 'coarse' : 'fine',
-        language: data.language || detectedLang,
-        scores_28: data.scores_28 || {},
-        scores_9: data.scores_9 || {},
-        source: data.source || 'backend',
-        num_labels: detectedLang === 'vi' ? 9 : 28,
+      const emotionResult: AnalysisResult = {
+        primary_emotion: emotionData.primary_emotion || 'neutral',
+        confidence: emotionData.confidence || 0,
+        label_type: isVietnamese ? 'coarse' : 'fine',
+        language: emotionData.language || detectedLang,
+        scores_28: emotionData.scores_28 || {},
+        scores_9: emotionData.scores_9 || {},
+        source: emotionData.source || 'backend',
+        num_labels: isVietnamese ? 9 : 28,
       };
       
-      setResult(result);
+      setResult(emotionResult);
+      if (mhData) setMhResult(mhData);
     } catch (err: any) {
       setError(err.message || 'Analysis failed');
       console.error('Analysis error:', err);
@@ -146,20 +233,27 @@ export default function Home() {
   };
 
   const detectedLang = text.trim() ? detectLanguage(text) : 'en';
-  const showFine = activeTab === 'en';
+  const isMentalHealthTab = activeTab === 'mental_health';
+  const showFine = activeTab === 'emotion_en';
+  const isEmotionVi = activeTab === 'emotion_vi';
   const scores = showFine ? result?.scores_28 : result?.scores_9;
   const labels = showFine ? GOEMOTIONS_28 : COARSE_EMOTIONS;
+
+  const getSeverityBarColor = (sev: number) => {
+    const colors = ['#22c55e', '#84cc16', '#f97316', '#ef4444', '#dc2626', '#7f1d1d'];
+    return colors[Math.min(sev, 5)];
+  };
 
   return (
     <main style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#e2e8f0', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 20px' }}>
         {/* Header */}
-        <header style={{ textAlign: 'center', marginBottom: 40 }}>
+        <header style={{ textAlign: 'center', marginBottom: 32 }}>
           <h1 style={{ fontSize: '2.5rem', fontWeight: 700, background: 'linear-gradient(135deg, #22c55e, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 8 }}>
             Emotion Lens Analyzer
           </h1>
           <p style={{ color: '#94a3b8', fontSize: '1.05rem' }}>
-            28 emotions for English · 9 emotions for Vietnamese
+            28 emotions · 7 mental health conditions
           </p>
         </header>
 
@@ -168,13 +262,13 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: 6, fontWeight: 500 }}>
-                Enter text to analyze emotion
+                Enter text to analyze
               </label>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type something in English or Vietnamese..."
+                placeholder="Type something in English..."
                 rows={4}
                 style={{
                   width: '100%',
@@ -209,26 +303,6 @@ export default function Home() {
               {loading ? 'Analyzing...' : 'Analyze'}
             </button>
           </div>
-          
-          {/* Language indicator */}
-          {text.trim() && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Detected:</span>
-              <span style={{ 
-                padding: '3px 10px', 
-                borderRadius: 6, 
-                fontSize: '0.78rem', 
-                fontWeight: 600,
-                background: detectedLang === 'vi' ? 'rgba(249, 115, 22, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                color: detectedLang === 'vi' ? '#fb923c' : '#60a5fa',
-              }}>
-                {detectedLang === 'vi' ? '🇻🇳 Vietnamese (9 emotions)' : '🇬🇧 English (28 emotions)'}
-              </span>
-              <span style={{ fontSize: '0.75rem', color: '#475569' }}>
-                {detectedLang === 'en' ? '28 fine-grained GoEmotions labels' : '9 coarse labels (Vietnamese data coming soon)'}
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Error */}
@@ -238,10 +312,231 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results */}
-        {result && (
+        {/* Tab Switcher */}
+        {(result || mhResult) && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button
+              onClick={() => setActiveTab('emotion_en')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: 8,
+                border: '1px solid',
+                borderColor: activeTab === 'emotion_en' ? '#3b82f6' : '#334155',
+                background: activeTab === 'emotion_en' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                color: activeTab === 'emotion_en' ? '#60a5fa' : '#94a3b8',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🇬🇧 28 Emotions (EN)
+            </button>
+            <button
+              onClick={() => setActiveTab('emotion_vi')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: 8,
+                border: '1px solid',
+                borderColor: activeTab === 'emotion_vi' ? '#f97316' : '#334155',
+                background: activeTab === 'emotion_vi' ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                color: activeTab === 'emotion_vi' ? '#fb923c' : '#94a3b8',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🇻🇳 9 Emotions (VI)
+            </button>
+            <button
+              onClick={() => setActiveTab('mental_health')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: 8,
+                border: '1px solid',
+                borderColor: activeTab === 'mental_health' ? '#a855f7' : '#334155',
+                background: activeTab === 'mental_health' ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
+                color: activeTab === 'mental_health' ? '#c084fc' : '#94a3b8',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🧠 7 Mental Health Conditions
+            </button>
+          </div>
+        )}
+
+        {/* Mental Health Results */}
+        {isMentalHealthTab && mhResult && (
           <>
-            {/* Primary Emotion */}
+            {/* Severity Banner */}
+            <div style={{
+              background: `linear-gradient(135deg, ${getSeverityBarColor(mhResult.severity_level)}22, #1e293b)`,
+              borderRadius: 16,
+              padding: '24px 32px',
+              border: `1px solid ${getSeverityBarColor(mhResult.severity_level)}44`,
+              marginBottom: 24,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 20,
+            }}>
+              <div style={{ fontSize: '3rem', lineHeight: 1 }}>
+                {MH_ICONS[mhResult.primary_condition] || '😐'}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 4 }}>PRIMARY MENTAL HEALTH CONDITION</div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 700 }}>
+                  {mhResult.primary_condition.replace(/_/g, ' ')}
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                    Confidence: <span style={{ color: MH_COLORS[mhResult.primary_condition] || '#22c55e', fontWeight: 600 }}>{(mhResult.primary_confidence * 100).toFixed(1)}%</span>
+                  </span>
+                  <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                    Severity: <span style={{ color: SEVERITY_COLORS[mhResult.severity_level] || '#6b7280', fontWeight: 600 }}>
+                      {MH_SEVERITY_LABELS[mhResult.severity_level] || 'Unknown'}
+                    </span>
+                  </span>
+                  {mhResult.needs_attention && (
+                    <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, background: 'rgba(220, 38, 38, 0.2)', color: '#fca5a5' }}>
+                      ⚠️ Needs Attention
+                    </span>
+                  )}
+                  {!mhResult.needs_attention && (
+                    <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, background: 'rgba(34, 197, 94, 0.15)', color: '#86efac' }}>
+                      ✅ Healthy
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Severity Bar */}
+            <div style={{ background: '#1e293b', borderRadius: 12, padding: 20, border: '1px solid #334155', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Severity Level</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: SEVERITY_COLORS[mhResult.severity_level] }}>
+                  {MH_SEVERITY_LABELS[mhResult.severity_level]}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 4, height: 24 }}>
+                {[0, 1, 2, 3, 4, 5].map(level => (
+                  <div
+                    key={level}
+                    style={{
+                      flex: 1,
+                      borderRadius: 6,
+                      background: mhResult.severity_level >= level
+                        ? SEVERITY_COLORS[level]
+                        : '#1e293b',
+                      border: `1px solid ${SEVERITY_COLORS[level]}44`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.65rem',
+                      fontWeight: 600,
+                      color: mhResult.severity_level >= level ? 'white' : '#475569',
+                      transition: 'all 0.3s',
+                    }}
+                  >
+                    {MH_SEVERITY_LABELS[level].slice(0, 4)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* All Mental Health Scores */}
+            <div style={{ background: '#1e293b', borderRadius: 16, padding: 24, border: '1px solid #334155' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: 16, color: '#e2e8f0' }}>
+                All Condition Scores
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 10 }}>
+                {MENTAL_HEALTH_LABELS.map((label) => {
+                  const score = mhResult.all_scores[label] || 0;
+                  const color = MH_COLORS[label] || '#6b7280';
+                  const icon = MH_ICONS[label] || '😐';
+                  const barPct = Math.min(100, Math.round(score * 100));
+                  const isActive = label === mhResult.primary_condition;
+                  const severity = MH_SEVERITY_MAP[label] || 0;
+                  
+                  return (
+                    <div key={label} style={{
+                      background: '#0f172a',
+                      borderRadius: 12,
+                      padding: '14px 16px',
+                      border: `1px solid ${isActive ? color : '#1e293b'}`,
+                      borderLeft: `4px solid ${color}`,
+                      transition: 'all 0.2s',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: '1.3rem' }}>{icon}</span>
+                          <div>
+                            <span style={{ fontSize: '1rem', fontWeight: 700, textTransform: 'capitalize' }}>
+                              {label.replace(/_/g, ' ')}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b', marginLeft: 8 }}>
+                              {MH_SEVERITY_LABELS[severity]}
+                            </span>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '1.1rem', fontWeight: 800, color }}>
+                          {barPct}%
+                        </span>
+                      </div>
+                      <div style={{ height: 8, background: '#1e293b', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${barPct}%`,
+                          background: color,
+                          borderRadius: 4,
+                          opacity: isActive ? 1 : 0.5,
+                          transition: 'width 0.5s ease',
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Top 3 Predictions */}
+            <div style={{ background: '#1e293b', borderRadius: 16, padding: 20, border: '1px solid #334155', marginTop: 16 }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 12, color: '#e2e8f0' }}>Top Predictions</h3>
+              <div style={{ display: 'flex', gap: 12 }}>
+                {mhResult.top_predictions.map((pred, i) => (
+                  <div key={pred.label} style={{
+                    flex: 1,
+                    background: '#0f172a',
+                    borderRadius: 10,
+                    padding: '12px 16px',
+                    border: `1px solid ${i === 0 ? MH_COLORS[pred.label] : '#1e293b'}`,
+                  }}>
+                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: 4 }}>
+                      {i === 0 ? '🏆 Primary' : i === 1 ? '🥈 Secondary' : '🥉 Third'}
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: MH_COLORS[pred.label] }}>
+                      {pred.label.replace(/_/g, ' ')}
+                    </div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: 4 }}>
+                      {(pred.confidence * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Model info */}
+            <div style={{ textAlign: 'center', marginTop: 16, padding: '12px', color: '#475569', fontSize: '0.8rem' }}>
+              Mental health model: DeBERTa-v3-base + LoRA · 7 conditions · {mhResult.source}
+            </div>
+          </>
+        )}
+
+        {/* Emotion Results Header */}
+        {!isMentalHealthTab && result && (
+          <>
+            {/* Primary Emotion Header */}
             <div style={{ 
               background: 'linear-gradient(135deg, #1e293b, #0f172a)', 
               borderRadius: 16, 
@@ -274,44 +569,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tab Switcher */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <button
-                onClick={() => setActiveTab('en')}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: 8,
-                  border: '1px solid',
-                  borderColor: activeTab === 'en' ? '#3b82f6' : '#334155',
-                  background: activeTab === 'en' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                  color: activeTab === 'en' ? '#60a5fa' : '#94a3b8',
-                  fontSize: '0.9rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                🇬🇧 English · 28 Emotions
-              </button>
-              <button
-                onClick={() => setActiveTab('vi')}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: 8,
-                  border: '1px solid',
-                  borderColor: activeTab === 'vi' ? '#f97316' : '#334155',
-                  background: activeTab === 'vi' ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
-                  color: activeTab === 'vi' ? '#fb923c' : '#94a3b8',
-                  fontSize: '0.9rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                🇻🇳 Vietnamese · 9 Emotions
-              </button>
-            </div>
-
             {/* Emotion Bars - 28 Labels (English) */}
-            {activeTab === 'en' && scores && (
+            {showFine && scores && (
               <div style={{ background: '#1e293b', borderRadius: 16, padding: 24, border: '1px solid #334155' }}>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: 16, color: '#e2e8f0' }}>
                   28 Fine-Grained Emotion Scores
@@ -364,7 +623,7 @@ export default function Home() {
             )}
 
             {/* Emotion Bars - 9 Labels (Vietnamese) */}
-            {activeTab === 'vi' && scores && (
+            {isEmotionVi && scores && (
               <div style={{ background: '#1e293b', borderRadius: 16, padding: 24, border: '1px solid #334155' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                   <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#e2e8f0' }}>
@@ -380,8 +639,6 @@ export default function Home() {
                     const color = GROUP_COLORS[label];
                     const icon = GROUP_ICONS[label];
                     const barPct = Math.min(100, Math.round(score * 100));
-                    
-                    // Show which 28 sub-emotions map to this coarse emotion
                     const subEmotions = GOEMOTIONS_28.filter(e => EMOTION_28_TO_9_MAP[e] === label);
                     
                     return (
@@ -424,18 +681,30 @@ export default function Home() {
         )}
 
         {/* No result state */}
-        {!result && !loading && !error && (
+        {!result && !mhResult && !loading && !error && (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: '#475569' }}>
             <div style={{ fontSize: '4rem', marginBottom: 16 }}>🔍</div>
             <p style={{ fontSize: '1.1rem', marginBottom: 8 }}>Enter text above and click Analyze</p>
             <p style={{ fontSize: '0.9rem' }}>Press Ctrl+Enter to analyze quickly</p>
+            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 24, flexWrap: 'wrap' }}>
+              <div style={{ background: '#1e293b', borderRadius: 12, padding: '16px 24px', border: '1px solid #334155', maxWidth: 300 }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>😊</div>
+                <strong style={{ color: '#e2e8f0' }}>Emotion Detection</strong>
+                <p style={{ fontSize: '0.85rem', marginTop: 4 }}>28 fine-grained emotions (English) · 9 coarse (Vietnamese) · GoEmotions model</p>
+              </div>
+              <div style={{ background: '#1e293b', borderRadius: 12, padding: '16px 24px', border: '1px solid #334155', maxWidth: 300 }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>🧠</div>
+                <strong style={{ color: '#e2e8f0' }}>Mental Health Screening</strong>
+                <p style={{ fontSize: '0.85rem', marginTop: 4 }}>7 conditions · DeBERTa-v3 + LoRA · severity assessment</p>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Footer */}
         <footer style={{ textAlign: 'center', marginTop: 60, padding: '20px 0', borderTop: '1px solid #1e293b', color: '#475569', fontSize: '0.85rem' }}>
-          <p>Emotion Lens · GoEmotions 28-label model (XLM-RoBERTa + LoRA)</p>
-          <p style={{ marginTop: 4 }}>English: 28 fine-grained emotions · Vietnamese: 9 coarse emotions (no training data yet)</p>
+          <p>Emotion Lens · GoEmotions 28-label (XLM-RoBERTa + LoRA) · Mental Health 7-class (DeBERTa-v3 + LoRA)</p>
+          <p style={{ marginTop: 4 }}>Run training: <code style={{ background: '#1e293b', padding: '2px 8px', borderRadius: 4 }}>python -m ai_nlp.training.mental_health_pipeline.run --mode train</code></p>
         </footer>
       </div>
     </main>

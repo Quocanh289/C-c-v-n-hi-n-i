@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from app.routes import analyze, learning, slang, health
+from app.routes import analyze, learning, slang, health, mental_health
 from app.models.inference import GoEmotionsInference, get_inference
 
 # Configure logging
@@ -83,6 +83,7 @@ app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(analyze.router, prefix="/api", tags=["analysis"])
 app.include_router(learning.router, prefix="/api", tags=["learning"])
 app.include_router(slang.router, prefix="/api", tags=["slang"])
+app.include_router(mental_health.router, prefix="/api", tags=["mental_health"])
 
 
 @app.get("/")
@@ -100,5 +101,8 @@ async def root():
             "slang_report": "/api/slang/report",
             "learning_feedback": "/api/learning/feedback",
             "learning_retrain": "/api/learning/retrain",
+            "mental_health_analyze": "/api/mental-health/analyze",
+            "mental_health_batch": "/api/mental-health/batch",
+            "mental_health_labels": "/api/mental-health/labels",
         },
     }

@@ -1,27 +1,32 @@
 # Task Progress
 
-## Goal: Use best model (28-label GoEmotions) and update frontend to show 28 emotions for English, 9 for Vietnamese
+## Goal: Build production-grade mental health training pipeline + integrate into extension
 
 ### Implementation Status:
 
-- [x] Analyze project structure and understand current state
-- [x] **Step 1: Update extension types** - Added 28 GoEmotions emotion types and visuals for English, 9 coarse for Vietnamese
-- [x] **Step 2: Update extension emotion classifier** - Added 28-label rule-based analysis for English, 9-label for Vietnamese
-- [x] **Step 3: Update backend inference** - Refactored to use trained 28-label GoEmotions model with: 
-  - 28 fine-grained labels for English text (auto-detected)
-  - 9 coarse aggregated labels for Vietnamese text (auto-detected)
-  - Threshold-based binary predictions from training pipeline
-- [x] **Step 4: Update frontend** - Built complete UI showing:
-  - Language auto-detection (EN → 28 labels, VI → 9 labels)
-  - Tab switcher between EN (28) and VI (9) views
-  - Color-coded probability bars with group labels
-  - Vietnamese section shows which 28 sub-emotions map to each coarse emotion
-- [x] **Step 5: Verify all changes** - Backend API, extension, and frontend all aligned
+- [x] **Phase 1: Mental Health Training Pipeline** (12 files created)
+  - [x] config.py, preprocessor.py, dataset.py, model.py, losses.py, metrics.py
+  - [x] trainer.py, threshold_optimizer.py, pipeline.py, run.py, requirements.txt, __init__.py
 
-### Files Modified:
-1. **extension/src/types/emotion.ts** - Added GOEMOTIONS_28_LABELS, COARSE_EMOTIONS_LABELS, visual mappings
-2. **extension/src/inference/emotionClassifier.ts** - Added 28/9-label rule-based analysis
-3. **backend/app/models/inference.py** - Rewrote with 28-label inference, language auto-detection
-4. **backend/app/routes/analyze.py** - Updated endpoints to serve 28/9 label outputs
-5. **backend/app/main.py** - Updated to use new inference module, removed old dependencies
-6. **frontend/app/page.tsx** - Complete rewrite with 28 EN / 9 VI emotion display
+- [x] **Phase 2: Training Completed**
+  - [x] Model trained for 20 epochs on DeBERTa-v3-base + LoRA
+  - [x] **Results:** Macro F1=0.6603, ROC AUC=0.9187, Accuracy=68.6%
+  - [x] Best model saved to `checkpoints/mental_health_model/best_model/`
+  - [x] Adapter: microsoft/deberta-v3-base, lora_r=8, target_modules=[key_proj, output_proj, value_proj, query_proj]
+
+- [x] **Phase 3: Backend Integration**
+  - [x] Rewrote `mental_health_inference.py` to load DeBERTa-v3-base + LoRA correctly
+  - [x] Path resolution checks checkpoint directory first
+  - [x] max_length=256 (matches training)
+  - [x] Route: POST /api/mental-health/analyze, /batch, GET /labels
+  - [x] Registered in main.py
+  - [x] Proper device handling (GPU if available)
+
+- [x] **Phase 4: Frontend UI Update**
+  - [x] 3-tab UI: English emotions (28), Vietnamese emotions (9), Mental Health (7)
+  - [x] Mental health tab: severity bar, all condition scores, top-3 predictions
+  - [x] Parallel API calls (emotion + mental health)
+
+- [x] **Phase 5: Extension UI Update**
+  - [x] Sidepanel: 3-tab view with mental health conditions
+  - [x] Severity indicators per condition
