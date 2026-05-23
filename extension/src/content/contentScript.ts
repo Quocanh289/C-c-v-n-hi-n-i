@@ -26,6 +26,72 @@ import {
 const CONTENT_SCRIPT_ID = 'emotion-lens';
 const OVERLAY_CONTAINER_CLASS = 'emotion-lens-overlay-container';
 const STYLESHEET_ID = 'emotion-lens-styles';
+const DEBUG_PREFIX = '[EmotionLens]';
+const DEBUG_ENABLED = true;
+
+const GENERIC_POST_COMMENT_SELECTOR = [
+  'article',
+  'div[role="article"]',
+  '[data-testid*="post"]',
+  '[data-testid*="comment"]',
+  'shreddit-post',
+  'shreddit-comment',
+  'ytd-comment-thread-renderer',
+  'div[class*="comment"]',
+  'div[class*="post"]',
+  'li[class*="comment"]',
+].join(', ');
+
+const TARGET_TEXT_SELECTOR = [
+  '[data-ad-preview="message"]',
+  'div[data-ad-comet-preview="message"]',
+  '#content-text',
+  'yt-formatted-string#content-text',
+  'div[data-testid="tweetText"]',
+  '[data-e2e="comment-text"]',
+  '[data-e2e="browse-video-desc"]',
+  'shreddit-comment [slot="comment"]',
+  'shreddit-post [slot="text-body"]',
+  'div[data-testid="comment"] p',
+  'div.md p',
+].join(', ');
+
+const TEXT_NODE_EXCLUDE_SELECTOR = [
+  `.${OVERLAY_CONTAINER_CLASS}`,
+  'a',
+  'button',
+  '[role="button"]',
+  '[role="link"]',
+  'time',
+  '[datetime]',
+  'header',
+  'nav',
+  'footer',
+  'aside',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  '[data-testid="User-Name"]',
+  '[data-testid="user-name"]',
+  '[data-testid="socialContext"]',
+  '[data-testid="app-text-transition-container"]',
+  '[data-e2e*="username"]',
+  '[data-e2e*="like"]',
+  '[data-e2e*="comment-count"]',
+].join(', ');
+
+const METADATA_TEXT_PATTERNS = [
+  /^@\w[\w.]{1,30}$/,
+  /^u\/[\w-]+$/i,
+  /^r\/[\w-]+$/i,
+  /^\d+([,.]\d+)?\s*(k|m)?$/i,
+  /^\d+\s*(comments?|replies|likes?|shares?|views?|upvotes?|downvotes?)$/i,
+  /^(like|reply|share|follow|following|subscribe|subscribed|view|views|comment|comments)$/i,
+  /^(just now|today|yesterday|\d+\s*(s|m|h|d|w|mo|y|sec|secs|min|mins|hr|hrs|day|days|week|weeks|month|months|year|years)\s*ago)$/i,
+];
 
 // ====================================================
 // State
@@ -39,6 +105,32 @@ let observer: MutationObserver | null = null;
 let scrollObserver: IntersectionObserver | null = null;
 let platform: SocialPlatform = SocialPlatform.Unknown;
 let batchTimer: ReturnType<typeof setTimeout> | null = null;
+let debugCounters = {
+  scans: 0,
+  candidates: 0,
+  queued: 0,
+  analyzed: 0,
+  overlays: 0,
+  filtered: 0,
+  errors: 0,
+};
+
+function debugLog(message: string, data?: unknown): void {
+  if (!DEBUG_ENABLED) return;
+  if (data === undefined) {
+    console.debug(`${DEBUG_PREFIX} ${message}`);
+  } else {
+    console.debug(`${DEBUG_PREFIX} ${message}`, data);
+  }
+}
+
+function normalizeSettings(rawSettings?: Partial<ExtensionSettings>): ExtensionSettings {
+  const normalized = { ...DEFAULT_SETTINGS, ...rawSettings } as ExtensionSettings;
+  if (!rawSettings?.backendApiUrl || rawSettings.backendApiUrl === 'http://localhost:8000') {
+    normalized.backendApiUrl = DEFAULT_SETTINGS.backendApiUrl;
+  }
+  return normalized;
+}
 
 // ====================================================
 // Styles Injection - Updated for 28-label colors
@@ -133,12 +225,51 @@ function detectPlatform(): SocialPlatform {
 // ====================================================
 // Text Extraction
 // ====================================================
+function hasMetadataAttribute(element: HTMLElement): boolean {
+  const attrText = [
+    element.getAttribute('aria-label'),
+    element.getAttribute('data-testid'),
+    element.getAttribute('data-e2e'),
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return /\b(user|username|author|avatar|profile|timestamp|time|date|like|reaction|reply|share|view|count|badge|verified|follow|subscribe|menu|more|vote|score)\b/.test(attrText);
+}
+
+function isTextNodeExcluded(parent: HTMLElement): boolean {
+  if (parent.closest(TARGET_TEXT_SELECTOR)) return false;
+  if (parent.closest(TEXT_NODE_EXCLUDE_SELECTOR)) return true;
+  let current: HTMLElement | null = parent;
+  while (current && current !== document.body) {
+    if (current.matches(TARGET_TEXT_SELECTOR)) return false;
+    if (hasMetadataAttribute(current)) return true;
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function isLikelyMetadataText(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, ' ');
+  if (!normalized) return true;
+  if (METADATA_TEXT_PATTERNS.some(pattern => pattern.test(normalized))) return true;
+  if (/^[\d\s.,:•·|/+-]+$/.test(normalized)) return true;
+  if (normalized.length <= 2) return true;
+  return false;
+}
+
+function isAllowedContentElement(element: HTMLElement): boolean {
+  if (element.closest(`.${OVERLAY_CONTAINER_CLASS}`)) return false;
+  if (element.matches(TARGET_TEXT_SELECTOR)) return true;
+  if (element.closest(TEXT_NODE_EXCLUDE_SELECTOR)) return false;
+  return Boolean(element.closest(GENERIC_POST_COMMENT_SELECTOR));
+}
+
 function extractTextFromElement(element: HTMLElement): string {
   if (processedElements.has(element)) return '';
   if (element.closest(`.${OVERLAY_CONTAINER_CLASS}`)) return '';
+  if (!isAllowedContentElement(element)) return '';
   
   const tagName = element.tagName.toLowerCase();
-  if (['script', 'style', 'noscript', 'iframe', 'svg', 'canvas'].includes(tagName)) return '';
+  if (['script', 'style', 'noscript', 'iframe', 'svg', 'canvas', 'input', 'textarea'].includes(tagName)) return '';
   
   const texts: string[] = [];
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null as unknown as NodeFilter);
@@ -148,14 +279,16 @@ function extractTextFromElement(element: HTMLElement): string {
     if (node.parentElement?.closest(`.${OVERLAY_CONTAINER_CLASS}`)) continue;
     const parent = node.parentElement;
     if (parent) {
+      if (isTextNodeExcluded(parent)) continue;
       const style = window.getComputedStyle(parent);
       if (style.display === 'none' || style.visibility === 'hidden') continue;
     }
     const text = node.textContent?.trim();
-    if (text && text.length > 1) texts.push(text);
+    if (text && !isLikelyMetadataText(text)) texts.push(text);
   }
   
-  return texts.join(' ').trim();
+  const extracted = texts.join(' ').replace(/\s+/g, ' ').trim();
+  return isLikelyMetadataText(extracted) ? '' : extracted;
 }
 
 function findTextElements(): HTMLElement[] {
@@ -166,7 +299,7 @@ function findTextElements(): HTMLElement[] {
   for (const selector of selectors) {
     const found = document.querySelectorAll<HTMLElement>(selector);
     found.forEach(el => {
-      if (!processedElements.has(el)) elements.push(el);
+      if (!processedElements.has(el) && isAllowedContentElement(el)) elements.push(el);
     });
   }
   return elements;
@@ -174,11 +307,9 @@ function findTextElements(): HTMLElement[] {
 
 function findGenericTextElements(): HTMLElement[] {
   const elements: HTMLElement[] = [];
-  const candidates = document.querySelectorAll<HTMLElement>(
-    'article, div[role="article"], [data-testid*="post"], [data-testid*="comment"], div[class*="comment"], div[class*="post"], li[class*="comment"]'
-  );
+  const candidates = document.querySelectorAll<HTMLElement>(`${TARGET_TEXT_SELECTOR}, ${GENERIC_POST_COMMENT_SELECTOR}`);
   candidates.forEach(el => {
-    if (!processedElements.has(el) && el.textContent && el.textContent.trim().length > 10) elements.push(el);
+    if (!processedElements.has(el) && isAllowedContentElement(el) && el.textContent && el.textContent.trim().length > 10) elements.push(el);
   });
   return elements;
 }
@@ -187,6 +318,10 @@ function findGenericTextElements(): HTMLElement[] {
 // Analysis Queue & Batch Processing
 // ====================================================
 function queueAnalysis(element: HTMLElement, text: string): void {
+  if (!isAllowedContentElement(element)) return;
+  if (isLikelyMetadataText(text)) return;
+  debugCounters.queued++;
+  debugLog('queued text', { mode: settings.activeMode, length: text.length, preview: text.slice(0, 120) });
   analysisQueue.push({ element, text });
   if (batchTimer) clearTimeout(batchTimer);
   batchTimer = setTimeout(processAnalysisQueue, 150);
@@ -206,18 +341,37 @@ async function processAnalysisQueue(): Promise<void> {
           if (processedTexts.has(text)) continue;
           if (!emotionClassifier.hasContent(text)) continue;
           
-          processedTexts.add(text);
-          processedElements.add(element);
-          
           const result = settings.activeMode === 'mental_health_en'
             ? await emotionClassifier.analyzeMentalHealth(text, settings)
             : await emotionClassifier.analyze(text, settings);
-          if (!isResultForActiveMode(result)) continue;
+          debugCounters.analyzed++;
+          debugLog('analysis result', {
+            mode: settings.activeMode,
+            type: result.analysisType,
+            label: result.primaryEmotion,
+            confidence: result.confidence,
+            language: result.language,
+            source: result.source,
+            threshold: settings.confidenceThreshold,
+          });
+          if (!isResultForActiveMode(result)) {
+            debugCounters.filtered++;
+            debugLog('filtered by active mode', { activeMode: settings.activeMode, resultType: result.analysisType, language: result.language });
+            processedTexts.add(text);
+            processedElements.add(element);
+            continue;
+          }
           
           if (result.confidence >= settings.confidenceThreshold) {
             applyVisualOverlay(element, text, result);
+          } else {
+            debugCounters.filtered++;
+            debugLog('filtered by confidence threshold', { confidence: result.confidence, threshold: settings.confidenceThreshold });
           }
+          processedTexts.add(text);
+          processedElements.add(element);
         } catch (error) {
+          debugCounters.errors++;
           console.error('[EmotionLens] Analysis error:', error);
         }
       }
@@ -230,7 +384,7 @@ async function processAnalysisQueue(): Promise<void> {
 }
 
 // ====================================================
-// Visual Overlay - Shows 28-label badges on detected text
+// Visual Overlay - Shows the primary label on detected text
 // ====================================================
 function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionResult): void {
   if (!settings.highlightEnabled && !settings.labelsEnabled) return;
@@ -299,10 +453,15 @@ function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionR
     badge.title = isMentalHealth
       ? `${labelText}: ${(confidence * 100).toFixed(0)}% | Mental health model${result.severityLabel ? ` | ${result.severityLabel}` : ''}`
       : `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'en' ? '28-label' : '9-label'} model`;
-    badge.textContent = `${icon} ${labelText}`;
-    
+    badge.textContent = `${icon} ${labelText}`.trim();
     overlayContainer.appendChild(badge);
-    element.insertAdjacentElement('afterend', overlayContainer);
+    try {
+      element.insertAdjacentElement('afterend', overlayContainer);
+    } catch {
+      element.appendChild(overlayContainer);
+    }
+    debugCounters.overlays++;
+    debugLog('overlay inserted', { label: labelText, confidence, totalOverlays: debugCounters.overlays });
     
     requestAnimationFrame(() => {
       overlayContainer.classList.add('visible');
@@ -360,16 +519,16 @@ function initMutationObserver(): void {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
             
-            if (isTextElement(element)) {
+            if (isTextElement(element) && isAllowedContentElement(element)) {
               const text = extractTextFromElement(element);
               if (text && !processedTexts.has(text)) queueAnalysis(element, text);
             }
             
             const textElements = element.querySelectorAll<HTMLElement>(
-              'article, div[role="article"], [data-testid*="post"], [data-testid*="comment"], div[class*="comment"], div[class*="post"], #content-text, [data-e2e="comment-text"], [data-e2e="browse-video-desc"]'
+              `${TARGET_TEXT_SELECTOR}, ${GENERIC_POST_COMMENT_SELECTOR}`
             );
             textElements.forEach(child => {
-              if (!processedElements.has(child)) {
+              if (!processedElements.has(child) && isAllowedContentElement(child)) {
                 const childText = extractTextFromElement(child);
                 if (childText && !processedTexts.has(childText)) queueAnalysis(child, childText);
               }
@@ -381,7 +540,7 @@ function initMutationObserver(): void {
       if (mutation.type === 'characterData') {
         const target = mutation.target as Text;
         const parent = target.parentElement;
-        if (parent && !processedElements.has(parent)) {
+        if (parent && !processedElements.has(parent) && isAllowedContentElement(parent)) {
           const text = extractTextFromElement(parent);
           if (text && !processedTexts.has(text)) queueAnalysis(parent, text);
         }
@@ -401,10 +560,12 @@ function initMutationObserver(): void {
 
 function isTextElement(element: HTMLElement): boolean {
   const tag = element.tagName.toLowerCase();
-  if (['script', 'style', 'noscript', 'iframe', 'svg'].includes(tag)) return false;
+  if (['script', 'style', 'noscript', 'iframe', 'svg', 'button', 'a'].includes(tag)) return false;
+  if (!isAllowedContentElement(element)) return false;
   
   const text = element.textContent?.trim();
   if (!text || text.length < 5) return false;
+  if (isLikelyMetadataText(text)) return false;
   
   return /[a-zA-Zàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]{2,}/i.test(text);
 }
@@ -441,6 +602,14 @@ function scheduleFullScan(): void {
 function performFullScan(): void {
   if (!settings.enabled) return;
   const elements = findTextElements();
+  debugCounters.scans++;
+  debugCounters.candidates += elements.length;
+  debugLog('scan', {
+    platform,
+    mode: settings.activeMode,
+    elements: elements.length,
+    counters: debugCounters,
+  });
   
   for (const element of elements) {
     if (!processedElements.has(element)) {
@@ -465,10 +634,9 @@ function listenForSettings(): void {
     
     switch (msg.type) {
       case MessageType.SETTINGS_UPDATED:
-        const previousMode = settings.activeMode;
-        settings = msg.payload as ExtensionSettings;
+        settings = normalizeSettings(msg.payload as Partial<ExtensionSettings>);
         if (!settings.enabled) removeAllOverlays();
-        if (settings.enabled && previousMode !== settings.activeMode) {
+        if (settings.enabled) {
           removeAllOverlays();
           scheduleFullScan();
         }
@@ -482,6 +650,18 @@ function listenForSettings(): void {
     }
     
     return false;
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'sync' || !changes.emotionLensSettings?.newValue) return;
+    settings = normalizeSettings(changes.emotionLensSettings.newValue as Partial<ExtensionSettings>);
+    debugLog('settings changed via storage', settings);
+    if (!settings.enabled) {
+      removeAllOverlays();
+      return;
+    }
+    removeAllOverlays();
+    scheduleFullScan();
   });
 }
 
@@ -516,9 +696,8 @@ async function initialize(): Promise<void> {
     console.log(`[EmotionLens] Detected platform: ${platform}`);
     
     const result = await chrome.storage.sync.get(['emotionLensSettings']);
-    if (result.emotionLensSettings) {
-      settings = { ...DEFAULT_SETTINGS, ...result.emotionLensSettings } as ExtensionSettings;
-    }
+    settings = normalizeSettings(result.emotionLensSettings as Partial<ExtensionSettings> | undefined);
+    debugLog('settings loaded', settings);
     
     if (!settings.enabled) {
       console.log('[EmotionLens] Extension is disabled in settings');

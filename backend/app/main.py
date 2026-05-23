@@ -16,6 +16,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.routes import analyze, learning, slang, health, mental_health
 from app.models.inference import GoEmotionsInference, get_inference
+from app.models.mental_health_inference import get_mental_health_inference
 
 # Configure logging
 logging.basicConfig(
@@ -45,6 +46,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not pre-load model on startup: {e}")
         logger.info("Model will be loaded on first request")
+
+    try:
+        mh_infer = get_mental_health_inference()
+        if mh_infer.is_loaded:
+            logger.info("Mental health best_model loaded successfully on startup")
+        else:
+            logger.warning("Mental health best_model not available on startup (keyword fallback will be used)")
+    except Exception as e:
+        logger.warning(f"Could not pre-load mental health best_model on startup: {e}")
     
     yield
     

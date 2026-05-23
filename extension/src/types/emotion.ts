@@ -363,8 +363,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   theme: 'system',
   customColors: {},
   enabledEmotions: Object.values(EmotionCategory),
-  backendApiUrl: 'http://localhost:8000',
-  localOnly: true,
+  backendApiUrl: 'http://localhost:8001',
+  localOnly: false,
   cacheEnabled: true,
   maxCacheSize: 500,
 };
@@ -389,6 +389,7 @@ export enum MessageType {
   GET_SETTINGS = 'GET_SETTINGS',
   UPDATE_SETTINGS = 'UPDATE_SETTINGS',
   RESET_CACHE = 'RESET_CACHE',
+  ANALYZE_MENTAL_HEALTH = 'ANALYZE_MENTAL_HEALTH',
   
   // Background -> Popup/Sidepanel
   STATS_RESULT = 'STATS_RESULT',
@@ -422,8 +423,9 @@ export const PLATFORM_SELECTORS: Record<SocialPlatform, string[]> = {
   [SocialPlatform.Facebook]: [
     '[data-ad-preview="message"]',
     'div[data-ad-comet-preview="message"]',
-    'div[role="article"] [dir="auto"]',
-    'div[aria-label*="Comment"] [dir="auto"]',
+    'div[role="article"] [data-ad-preview="message"]',
+    'div[role="article"] div[data-ad-comet-preview="message"]',
+    'div[aria-label*="Comment"] div[dir="auto"]',
   ],
   [SocialPlatform.YouTube]: [
     '#content-text',
@@ -434,23 +436,22 @@ export const PLATFORM_SELECTORS: Record<SocialPlatform, string[]> = {
   [SocialPlatform.Reddit]: [
     'div[data-testid="comment"] p',
     'shreddit-comment div.md p',
+    'shreddit-comment [slot="comment"]',
+    'shreddit-post [slot="text-body"]',
     'div.md p',
-    'h3',
   ],
   [SocialPlatform.TikTok]: [
     'div[data-e2e="comment-text"]',
     'div[data-e2e="browse-video-desc"]',
   ],
   [SocialPlatform.Threads]: [
-    'div[data-pressable-container="true"] span',
+    'div[data-pressable-container="true"] div[dir="auto"]',
   ],
   [SocialPlatform.Twitter]: [
     'div[data-testid="tweetText"]',
-    'article div[lang] span',
   ],
   [SocialPlatform.X]: [
     'div[data-testid="tweetText"]',
-    'article div[lang] span',
   ],
   [SocialPlatform.Unknown]: [],
 };

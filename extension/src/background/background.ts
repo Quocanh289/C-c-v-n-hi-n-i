@@ -41,6 +41,14 @@ let activeTabId: number | null = null;
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
 
+function normalizeSettings(rawSettings?: Partial<ExtensionSettings>): ExtensionSettings {
+  const normalized = { ...DEFAULT_SETTINGS, ...rawSettings } as ExtensionSettings;
+  if (!rawSettings?.backendApiUrl || rawSettings.backendApiUrl === 'http://localhost:8000') {
+    normalized.backendApiUrl = DEFAULT_SETTINGS.backendApiUrl;
+  }
+  return normalized;
+}
+
 // ====================================================
 // Initialization
 // ====================================================
@@ -53,8 +61,9 @@ async function initialize(): Promise<void> {
   try {
     // Load settings
     const result = await chrome.storage.sync.get(['emotionLensSettings']);
-    if (result.emotionLensSettings) {
-      settings = { ...DEFAULT_SETTINGS, ...result.emotionLensSettings } as ExtensionSettings;
+    settings = normalizeSettings(result.emotionLensSettings as Partial<ExtensionSettings> | undefined);
+    if (result.emotionLensSettings?.backendApiUrl !== settings.backendApiUrl) {
+      await chrome.storage.sync.set({ emotionLensSettings: settings });
     }
 
     // Load stats
@@ -202,7 +211,7 @@ chrome.runtime.onMessage.addListener(
 
       case MessageType.UPDATE_SETTINGS: {
         const newSettings = msg.payload as Partial<ExtensionSettings>;
-        settings = { ...settings, ...newSettings };
+        settings = normalizeSettings({ ...settings, ...newSettings });
         chrome.storage.sync.set({ emotionLensSettings: settings }).catch(err => {
           console.error('[EmotionLens] Failed to save settings:', err);
         });
@@ -224,6 +233,28 @@ chrome.runtime.onMessage.addListener(
       case MessageType.RESET_CACHE: {
         resetStats();
         sendResponse({ payload: { success: true } });
+        return true;
+      }
+
+      case MessageType.ANALYZE_MENTAL_HEALTH: {
+        const { text, backendApiUrl } = msg.payload as { text: string; backendApiUrl?: string };
+        const baseUrl = (backendApiUrl || settings.backendApiUrl || DEFAULT_SETTINGS.backendApiUrl).replace(/\/+$/, '');
+
+        fetch(`${baseUrl}/api/mental-health/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        })
+          .then(async response => {
+            if (!response.ok) {
+              throw new Error(`Mental health backend returned ${response.status}`);
+            }
+            sendResponse({ payload: await response.json() });
+          })
+          .catch(error => {
+            console.error('[EmotionLens] Mental health backend request failed:', error);
+            sendResponse({ error: error instanceof Error ? error.message : String(error) });
+          });
         return true;
       }
     }
@@ -257,7 +288,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     // Set default settings on first install
-    chrome.storage.sync.set({ emotionLensSettings: DEFAULT_SETTINGS }).catch(err => {
+    chrome.storage.sync.set({ emotionLensSettings: normalizeSettings() }).catch(err => {
       console.error('[EmotionLens] Failed to set default settings:', err);
     });
     chrome.storage.local.set({ emotionLensStats: stats }).catch(err => {

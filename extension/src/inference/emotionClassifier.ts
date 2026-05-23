@@ -17,6 +17,7 @@ import {
   GOEMOTIONS_28_LABELS,
   COARSE_EMOTIONS_LABELS,
   EMOTION_28_TO_9_MAP,
+  MessageType,
 } from '../types/emotion';
 
 // Vietnamese character detection for language classification
@@ -294,18 +295,7 @@ export class EmotionClassifier {
       return this.emptyMentalHealthResult('Normal', 0, language, performance.now() - startTime);
     }
 
-    const baseUrl = (settings.backendApiUrl || 'http://localhost:8000').replace(/\/+$/, '');
-    const response = await fetch(`${baseUrl}/api/mental-health/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Mental health backend returned ${response.status}`);
-    }
-
-    const data = await response.json() as {
+    const data = await this.requestMentalHealthAnalysis(text, settings) as {
       primary_condition?: string;
       primary_confidence?: number;
       all_scores?: Record<string, number>;
@@ -337,6 +327,33 @@ export class EmotionClassifier {
       severityLabel: data.severity_label,
       needsAttention: data.needs_attention,
     };
+  }
+
+  private async requestMentalHealthAnalysis(text: string, settings: ExtensionSettings): Promise<unknown> {
+    const backendApiUrl = settings.backendApiUrl || 'http://localhost:8001';
+
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      const response = await chrome.runtime.sendMessage({
+        type: MessageType.ANALYZE_MENTAL_HEALTH,
+        payload: { text, backendApiUrl },
+      }) as { payload?: unknown; error?: string };
+
+      if (response?.payload) return response.payload;
+      throw new Error(response?.error || 'Mental health backend request failed');
+    }
+
+    const baseUrl = backendApiUrl.replace(/\/+$/, '');
+    const response = await fetch(`${baseUrl}/api/mental-health/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Mental health backend returned ${response.status}`);
+    }
+
+    return response.json();
   }
 
   private emptyEmotionScores(): EmotionScores {
