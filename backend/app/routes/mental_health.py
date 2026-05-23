@@ -1,8 +1,8 @@
 """
 Mental Health Analysis Routes
 ===============================
-API endpoints for mental health condition detection using the trained
-DeBERTa-v3 + LoRA model.
+API endpoints for a CSV-trained meta-classifier combining sentiment, emotion
+and symptom features.
 
 Endpoints:
   POST /api/mental-health/analyze  — Analyze single text
@@ -12,12 +12,13 @@ Endpoints:
 
 import logging
 import time
-from typing import List, Optional, Any
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
 
 from app.models.mental_health_inference import (
+    DETAILED_LABELS,
     MentalHealthInference,
     get_mental_health_inference,
     MENTAL_HEALTH_LABELS,
@@ -53,13 +54,21 @@ class MentalHealthResponse(BaseModel):
     text: str
     primary_condition: str = "Normal"
     primary_confidence: float = 0.0
-    all_scores: dict = {}
+    all_scores: Dict[str, float] = Field(default_factory=dict)
+    diagnosis_code: str = "normal"
+    diagnosis_vi: str = "Không có dấu hiệu rõ ràng"
+    diagnosis_scores: Dict[str, float] = Field(default_factory=dict)
+    risk_level: str = "none"
     needs_attention: bool = False
     severity_level: int = 0
     severity_label: str = "healthy"
-    top_predictions: List[TopPrediction] = []
-    source: str = "keyword_fallback"
-    num_labels: int = 7
+    top_predictions: List[TopPrediction] = Field(default_factory=list)
+    extracted_features: Dict[str, float] = Field(default_factory=dict)
+    disclaimer: str = "Ket qua chi ho tro sang loc, khong phai chan doan y khoa chinh thuc."
+    dataset_loaded: bool = False
+    validation_accuracy: Optional[float] = None
+    source: str = "meta_rule_fallback"
+    num_labels: int = 15
     processing_time_ms: float = 0.0
 
 
@@ -71,10 +80,11 @@ class BatchMentalHealthResponse(BaseModel):
 
 class LabelsResponse(BaseModel):
     """Response model for available labels."""
-    num_labels: int = 7
-    labels: List[str] = Field(default_factory=lambda: MENTAL_HEALTH_LABELS)
-    description: str = "7-class mental health condition detection"
-    model: str = "DeBERTa-v3-base + LoRA"
+    num_labels: int = 15
+    labels: List[str] = Field(default_factory=lambda: DETAILED_LABELS)
+    ui_groups: List[str] = Field(default_factory=lambda: MENTAL_HEALTH_LABELS)
+    description: str = "15-class mental health screening meta-classifier; UI groups remain backwards compatible"
+    model: str = "RandomForest over sentiment, emotion and symptom features"
 
 
 # ============================================================
@@ -86,16 +96,9 @@ async def analyze_mental_health(request: MentalHealthRequest):
     """
     Analyze text for mental health conditions.
     
-    Uses the trained 7-class DeBERTa-v3 + LoRA model to detect:
-      - Normal (healthy)
-      - Depression
-      - Anxiety
-      - Bipolar
-      - Stress
-      - Suicidal
-      - Personality_disorder
-    
-    Returns severity assessment and top predictions.
+    Uses a meta-classifier trained from the configured rule-feature CSV. The
+    response returns the detailed screening label plus a backwards-compatible
+    grouped condition for the current UI.
     """
     start = time.time()
     
@@ -116,12 +119,20 @@ async def analyze_mental_health(request: MentalHealthRequest):
             primary_condition=result.get("primary_condition", "Normal"),
             primary_confidence=result.get("primary_confidence", 0.0),
             all_scores=result.get("all_scores", {}),
+            diagnosis_code=result.get("diagnosis_code", "normal"),
+            diagnosis_vi=result.get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),
+            diagnosis_scores=result.get("diagnosis_scores", {}),
+            risk_level=result.get("risk_level", "none"),
             needs_attention=result.get("needs_attention", False),
             severity_level=result.get("severity_level", 0),
             severity_label=result.get("severity_label", "healthy"),
             top_predictions=top_preds,
-            source=result.get("source", "keyword_fallback"),
-            num_labels=result.get("num_labels", 7),
+            extracted_features=result.get("extracted_features", {}),
+            disclaimer=result.get("disclaimer", ""),
+            dataset_loaded=result.get("dataset_loaded", False),
+            validation_accuracy=result.get("validation_accuracy"),
+            source=result.get("source", "meta_rule_fallback"),
+            num_labels=result.get("num_labels", 15),
             processing_time_ms=processing_time,
         )
     except Exception as e:
@@ -156,12 +167,20 @@ async def analyze_mental_health_batch(request: BatchMentalHealthRequest):
                 primary_condition=result.get("primary_condition", "Normal"),
                 primary_confidence=result.get("primary_confidence", 0.0),
                 all_scores=result.get("all_scores", {}),
+                diagnosis_code=result.get("diagnosis_code", "normal"),
+                diagnosis_vi=result.get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),
+                diagnosis_scores=result.get("diagnosis_scores", {}),
+                risk_level=result.get("risk_level", "none"),
                 needs_attention=result.get("needs_attention", False),
                 severity_level=result.get("severity_level", 0),
                 severity_label=result.get("severity_label", "healthy"),
                 top_predictions=top_preds,
-                source=result.get("source", "keyword_fallback"),
-                num_labels=result.get("num_labels", 7),
+                extracted_features=result.get("extracted_features", {}),
+                disclaimer=result.get("disclaimer", ""),
+                dataset_loaded=result.get("dataset_loaded", False),
+                validation_accuracy=result.get("validation_accuracy"),
+                source=result.get("source", "meta_rule_fallback"),
+                num_labels=result.get("num_labels", 15),
                 processing_time_ms=0.0,
             ))
         
@@ -177,7 +196,6 @@ async def analyze_mental_health_batch(request: BatchMentalHealthRequest):
 @router.get("/labels", response_model=LabelsResponse)
 async def get_mental_health_labels():
     """
-    Get available mental health condition labels.
-    Returns the 7-class label set with metadata.
+    Get detailed CSV target labels and backwards-compatible UI groups.
     """
     return LabelsResponse()

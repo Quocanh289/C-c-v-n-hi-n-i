@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.routes import analyze, learning, slang, health, mental_health
-from app.models.inference import GoEmotionsInference, get_inference
+from app.models.inference import get_inference
 from app.models.mental_health_inference import get_mental_health_inference
 
 # Configure logging
@@ -36,25 +36,25 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Emotion Lens Backend...")
     
-    # Pre-load the GoEmotions 28-label model on startup
+    # Initialize the emotion-feature provider used by analysis endpoints.
     try:
         infer = get_inference()
         if infer.is_loaded:
-            logger.info("GoEmotions 28-label model loaded successfully on startup")
+            logger.info("Emotion feature inference initialized on startup")
         else:
-            logger.warning("GoEmotions model not available on startup (will load on first request)")
+            logger.warning("Emotion feature inference not available on startup")
     except Exception as e:
-        logger.warning(f"Could not pre-load model on startup: {e}")
+        logger.warning(f"Could not initialize emotion inference on startup: {e}")
         logger.info("Model will be loaded on first request")
 
     try:
         mh_infer = get_mental_health_inference()
         if mh_infer.is_loaded:
-            logger.info("Mental health best_model loaded successfully on startup")
+            logger.info("Mental health CSV meta-model loaded successfully on startup")
         else:
-            logger.warning("Mental health best_model not available on startup (keyword fallback will be used)")
+            logger.warning("Mental health CSV meta-model not available on startup (rule fallback will be used)")
     except Exception as e:
-        logger.warning(f"Could not pre-load mental health best_model on startup: {e}")
+        logger.warning(f"Could not initialize mental health meta-model on startup: {e}")
     
     yield
     
@@ -65,8 +65,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Emotion Lens API",
-    description="AI-powered emotion detection for social media text. "
-                "Supports Vietnamese and English with multi-task learning.",
+    description="Emotion analysis and mental-health screening support for Vietnamese and English text.",
     version="1.0.0",
     lifespan=lifespan,
 )
