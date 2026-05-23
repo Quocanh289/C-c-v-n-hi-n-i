@@ -103,7 +103,7 @@ Examples:
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (default: 16)")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs (default: 20)")
     parser.add_argument("--accum", type=int, default=None, help="Gradient accumulation steps (default: 2)")
-    parser.add_argument("--loss", type=str, default=None, choices=["focal", "weighted_ce", "ce", "label_smooth_ce"])
+    parser.add_argument("--loss", type=str, default=None, choices=["focal", "weighted_ce", "ce", "label_smooth_ce", "confusion_focal"])
     parser.add_argument("--fp16", action="store_true", help="Enable fp16 mixed precision")
     parser.add_argument("--no-aug", action="store_true", help="Disable data augmentation")
     parser.add_argument("--no-balanced", action="store_true", help="Disable balanced sampling")

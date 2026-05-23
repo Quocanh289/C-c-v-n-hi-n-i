@@ -29,7 +29,13 @@ from .config import (
 from .preprocessor import RedditTextPreprocessor
 from .dataset import MentalHealthDataset, create_dataloaders
 from .model import MentalHealthClassifier
-from .losses import FocalLoss, WeightedCrossEntropyLoss
+from .losses import (
+    FocalLoss,
+    WeightedCrossEntropyLoss,
+    PerClassGammaFocalLoss,
+    ConfusionFocalLoss,
+    LabelSmoothingCrossEntropy,
+)
 from .metrics import MentalHealthMetrics
 from .trainer import MentalHealthTrainer
 from .pipeline import MentalHealthPipeline

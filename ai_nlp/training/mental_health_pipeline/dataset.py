@@ -155,11 +155,40 @@ class DataAugmenter:
             return words[:1]
         return new_words
     
+    # Clinical keywords that MUST NOT be augmented or changed
+    # Augmenting these could alter clinical meaning or mask distress signals
+    CLINICAL_PROTECTED_KEYWORDS = [
+        "kill myself", "end my life", "want to die", "better off dead",
+        "suicide", "no reason to live", "can't go on", "end it all",
+        "wish i was dead", "take my own life", "suicidal", "ending it",
+        "don't want to live", "i give up", "nothing matters",
+        "ready to die", "just want peace", "i want out",
+        "depressed", "depression", "hopeless", "worthless",
+        "panic attack", "mania", "hypomania", "psychotic",
+        "self harm", "self-harm", "cutting", "overdose",
+    ]
+    
+    def _has_protected_content(self, text: str) -> bool:
+        """Check if text contains clinical keywords that should not be augmented."""
+        text_lower = text.lower()
+        for keyword in self.CLINICAL_PROTECTED_KEYWORDS:
+            if keyword in text_lower:
+                return True
+        return False
+
     def augment(self, text: str) -> str:
         """
         Apply EDA to a single text.
         Returns augmented text (or original if no operation selected).
+        
+        Safety: texts containing critical clinical keywords (suicidal ideation,
+        self-harm, crisis statements) are NOT augmented — we must preserve
+        their semantic meaning exactly.
         """
+        # PROTECTED: Do not augment any text with critical clinical keywords
+        if self._has_protected_content(text):
+            return text
+        
         words = text.split()
         if len(words) <= 3:
             return text

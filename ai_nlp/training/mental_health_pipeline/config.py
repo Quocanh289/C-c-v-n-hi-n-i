@@ -239,10 +239,39 @@ class TrainingConfig:
     #   "weighted_ce" — CrossEntropy with class weights (handle imbalance)
     #   "focal"       — Focal Loss (γ=2.0 focus on hard examples)
     #   "label_smooth_ce" — Label smoothing CE
-    loss_type: str = "focal"
+    #   "confusion_focal" — Focal loss + confusion penalty for hard pairs
+    loss_type: str = "confusion_focal"
     focal_gamma: float = 2.0
     focal_alpha: Optional[List[float]] = None  # None = auto-compute from class counts
     label_smoothing: float = 0.1  # Used when loss_type="label_smooth_ce"
+    
+    # Per-class gamma for FocalLoss (higher = more focus on that class)
+    # Labels: Normal, Depression, Anxiety, Bipolar, Stress, Suicidal, Personality_disorder
+    # Higher gamma on Depression & Suicidal to fix the confusion matrix
+    per_class_gamma: Optional[List[float]] = field(default_factory=lambda: [
+        2.0,    # Normal
+        3.5,    # Depression — most confused, highest focus
+        2.5,    # Anxiety — moderately confused
+        2.0,    # Bipolar
+        2.0,    # Stress
+        3.0,    # Suicidal — very confused with Depression
+        2.0,    # Personality_disorder
+    ])
+    
+    # Confusion penalty: weight for the auxiliary confusion-avoidance loss
+    # Helps penalize dangerous misclassifications (e.g., Suicidal → Depression)
+    confusion_penalty_weight: float = 0.3
+    
+    # Pairs to penalize: (true_class, wrong_class) pairs to discourage
+    # Critical: Suicidal misclassified as anything else is very dangerous
+    confusion_penalty_pairs: List[Tuple[int, int]] = field(default_factory=lambda: [
+        (5, 1),  # Suicidal → Depression (50% of errors!)
+        (5, 2),  # Suicidal → Anxiety
+        (5, 0),  # Suicidal → Normal
+        (1, 5),  # Depression → Suicidal
+        (2, 1),  # Anxiety → Depression
+        (1, 3),  # Depression → Bipolar
+    ])
 
     # ---------- Optimization ----------
     mixed_precision: str = "fp16"  # "fp16", "bf16", "no"
