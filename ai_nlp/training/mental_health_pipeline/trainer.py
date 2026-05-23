@@ -97,7 +97,7 @@ class MentalHealthTrainer:
         # Training state
         self.current_epoch = 0
         self.global_step = 0
-        self.best_metric = -float("inf")
+        self.best_metric = self._load_best_metric_from_disk()
         self.best_epoch = -1
         self.patience_counter = 0
         self.is_early_stopped = False
@@ -457,6 +457,39 @@ class MentalHealthTrainer:
         # Clean up old checkpoints (keep only save_total_limit)
         self._cleanup_checkpoints()
     
+    def _load_best_metric_from_disk(self) -> float:
+        """
+        Load the best metric value from an existing best_model checkpoint on disk.
+        
+        This prevents new training runs from overwriting a previously saved
+        best model unless the new model actually performs better.
+        
+        Returns:
+            The best metric value from disk, or -inf if no previous best model exists.
+        """
+        best_path = os.path.join(self.checkpoint_dir, "best_model")
+        metrics_path = os.path.join(best_path, "metrics.json")
+        
+        if os.path.exists(metrics_path):
+            try:
+                with open(metrics_path, "r") as f:
+                    metrics = json.load(f)
+                
+                metric_key = self.config.early_stopping_metric
+                previous_best = metrics.get(metric_key, -float("inf"))
+                
+                if previous_best > -float("inf"):
+                    logger.info(
+                        f"Loaded previous best model from {best_path}: "
+                        f"{metric_key}={previous_best:.6f}"
+                    )
+                    return previous_best
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                logger.warning(f"Could not load previous best metric: {e}")
+        
+        logger.info("No previous best model found. Starting fresh.")
+        return -float("inf")
+
     def _load_best_checkpoint(self):
         """Load the best model checkpoint."""
         best_path = os.path.join(self.checkpoint_dir, "best_model")

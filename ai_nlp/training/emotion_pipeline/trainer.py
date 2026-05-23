@@ -140,7 +140,7 @@ class Trainer:
         # State
         self.global_step = 0
         self.current_epoch = 0
-        self.best_score = float("-inf") if config.greater_is_better else float("inf")
+        self.best_score = self._load_best_metric_from_disk()
         self.best_epoch = 0
         self.best_metrics: Optional[EmotionMetrics] = None
         self.best_thresholds: Optional[np.ndarray] = None
@@ -477,6 +477,43 @@ class Trainer:
         
         return result
     
+    def _load_best_metric_from_disk(self) -> float:
+        """
+        Load the best metric value from an existing best_model checkpoint on disk.
+        
+        This prevents new training runs from overwriting a previously saved
+        best model unless the new model actually performs better.
+        
+        Returns:
+            The best metric value from disk, or -inf if no previous best model exists.
+        """
+        best_path = os.path.join(self.checkpoint_dir, "best_model")
+        metrics_path = os.path.join(best_path, "metrics.json")
+        
+        if os.path.exists(metrics_path):
+            try:
+                with open(metrics_path, "r") as f:
+                    metrics = json.load(f)
+                
+                metric_key = self.config.early_stopping_metric
+                previous_best = metrics.get(metric_key, -float("inf"))
+                
+                if previous_best > -float("inf"):
+                    logger.info(
+                        f"Loaded previous best model from {best_path}: "
+                        f"{metric_key}={previous_best:.6f}"
+                    )
+                    
+                    # If greater_is_better=False (lower is better), invert the check
+                    # by returning the value as-is. The comparison logic in train()
+                    # handles both cases.
+                    return previous_best
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                logger.warning(f"Could not load previous best metric: {e}")
+        
+        logger.info("No previous best model found. Starting fresh.")
+        return float("-inf") if self.config.greater_is_better else float("inf")
+
     def _save_checkpoint(
         self,
         epoch: int,
