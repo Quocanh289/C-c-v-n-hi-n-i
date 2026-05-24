@@ -41,6 +41,8 @@ anaconda/
 *.pickle
 checkpoints/
 models/
+!backend/app/models/
+!backend/app/models/*.py
 ai_nlp/checkpoints/
 ai_nlp/models/
 backend/models/checkpoints/

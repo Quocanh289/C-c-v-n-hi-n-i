@@ -6,12 +6,13 @@
 
 import logging
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.models.inference import GoEmotionsInference, get_inference, GOEMOTIONS_28, COARSE_EMOTIONS
+from app.models.mental_health_inference import get_mental_health_inference
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,8 @@ class AnalyzeResponse(BaseModel):
     confidence: float = 0.0
     label_type: str = "fine"  # "fine" (28) or "coarse" (9)
     language: str = "en"
-    scores_28: dict = {}  # 28 fine-grained scores (for English)
-    scores_9: dict = {}   # 9 coarse scores (for Vietnamese)
+    scores_28: Dict[str, float] = Field(default_factory=dict)  # 28 fine-grained scores (for English)
+    scores_9: Dict[str, float] = Field(default_factory=dict)   # 9 coarse scores (for Vietnamese)
     toxicity_score: float = 0.0
     toxicity_binary: bool = False
     sarcasm_score: float = 0.0
@@ -52,6 +53,11 @@ class AnalyzeResponse(BaseModel):
     model: str = "xlm-roberta-base+lora+goemotions28"
     num_labels: int = 28
     processing_time_ms: float = 0.0
+    diagnosis_code: str = "normal"
+    diagnosis_vi: str = "Không có dấu hiệu rõ ràng"
+    risk_level: str = "none"
+    needs_attention: bool = False
+    mental_health_screening: Dict[str, Any] = Field(default_factory=dict)
 
 
 class BatchAnalyzeResponse(BaseModel):
@@ -83,6 +89,7 @@ async def analyze_endpoint(request: AnalyzeRequest):
             text=request.text,
             output_mode=request.output_mode,  # None = auto
         )
+        screening = get_mental_health_inference().classify(request.text)
         
         processing_time = (time.time() - start) * 1000
         
@@ -102,6 +109,11 @@ async def analyze_endpoint(request: AnalyzeRequest):
             model=result.get("model", "xlm-roberta-base+lora+goemotions28"),
             num_labels=result.get("num_labels", 28),
             processing_time_ms=processing_time,
+            diagnosis_code=screening.get("diagnosis_code", "normal"),
+            diagnosis_vi=screening.get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),
+            risk_level=screening.get("risk_level", "none"),
+            needs_attention=screening.get("needs_attention", False),
+            mental_health_screening=screening,
         )
     except Exception as e:
         logger.error(f"Analysis failed: {e}", exc_info=True)
@@ -124,6 +136,7 @@ async def analyze_batch(request: BatchAnalyzeRequest):
         
         for text in request.texts:
             result = infer.classify(text=text, output_mode=None)
+            result["mental_health_screening"] = get_mental_health_inference().classify(text)
             results.append(result)
         
         response_results = [
@@ -143,6 +156,11 @@ async def analyze_batch(request: BatchAnalyzeRequest):
                 model=r.get("model", "xlm-roberta-base+lora+goemotions28"),
                 num_labels=r.get("num_labels", 28),
                 processing_time_ms=0.0,
+                diagnosis_code=r["mental_health_screening"].get("diagnosis_code", "normal"),
+                diagnosis_vi=r["mental_health_screening"].get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),
+                risk_level=r["mental_health_screening"].get("risk_level", "none"),
+                needs_attention=r["mental_health_screening"].get("needs_attention", False),
+                mental_health_screening=r["mental_health_screening"],
             )
             for t, r in zip(request.texts, results)
         ]
