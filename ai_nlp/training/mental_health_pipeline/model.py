@@ -2,30 +2,26 @@
 Model Module
 =============
 Mental Health Classifier using DeBERTa-v3-base + LoRA.
+Plus Ensemble version combining DeBERTa-v3, XLM-RoBERTa, and PhoBERT.
 
 Architecture:
   - Base: DeBERTa-v3-base (184M params) or XLM-RoBERTa-base (279M params)
+    or PhoBERT-base (135M params)
   - PEFT: LoRA (Low-Rank Adaptation) — only trains ~0.5M params
-  - Head: Dropout → Linear(768, 7) → Softmax
+  - Head: Dropout -> Linear(768, 7) -> Softmax
 
-Rationale for DeBERTa-v3-base over XLM-RoBERTa-base:
-  1. DeBERTa-v3 uses disentangled attention → better at understanding nuanced
-     mental health language (e.g., "I'm fine" vs actual distress signals)
-  2. DeBERTa-v3 has enhanced masked decoder → better at context understanding
-     of long Reddit posts
-  3. Smaller model (184M vs 279M) → faster training, less VRAM
-  4. Consistently outperforms RoBERTa on GLUE/SuperGLUE
-  5. For English-only mental health detection, multilingual XLM is unnecessary
-  6. RTX 4060 16GB: DeBERTa-v3 + LoRA fits comfortably at batch 16, 256 tokens
-
-For multilingual (e.g., Vietnamese adaptation later):
-  - Use XLM-RoBERTa-base: "FacebookAI/xlm-roberta-base"
-  - Or PhoBERT: "vinai/phobert-base" (trained separately on Vietnamese data)
+Ensemble:
+  - Trains 3 models independently (sequentially to fit RTX 4060 16GB)
+  - Inference: weighted average of all 3 softmax outputs
+  - Weights: DeBERTa=0.4, XLM-R=0.35, PhoBERT=0.25
+  - Each model catches different linguistic patterns, ensemble reduces variance
 """
 
 import os
+import json
 import logging
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Union
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -33,36 +29,44 @@ import torch.nn.functional as F
 from transformers import (
     AutoModelForSequenceClassification,
     AutoConfig,
-    DebertaV2ForSequenceClassification,
+    AutoTokenizer,
+    PreTrainedTokenizer,
 )
 from peft import (
     LoraConfig,
     get_peft_model,
     PeftModel,
     TaskType,
-    prepare_model_for_kbit_training,
 )
 
-from .config import MENTAL_HEALTH_LABELS, NUM_MH_CLASSES, TrainingConfig
+from .config import (
+    MENTAL_HEALTH_LABELS,
+    MENTAL_HEALTH_LABELS_TO_IDX,
+    IDX_TO_MH_LABELS,
+    NUM_MH_CLASSES,
+    TrainingConfig,
+    ENSEMBLE_MODELS,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class MentalHealthClassifier(nn.Module):
     """
-    Mental Health Classifier with DeBERTa-v3-base + LoRA.
+    Mental Health Classifier with Transformer + LoRA.
     
-    Features:
-    - PEFT LoRA fine-tuning (only ~0.5M trainable params)
-    - Custom classification head with configurable dropout
-    - Gradient checkpointing for VRAM efficiency
-    - Supports both DeBERTa-v3 and XLM-RoBERTa backbones
+    Supports:
+    - DeBERTa-v3-base
+    - XLM-RoBERTa-base
+    - PhoBERT-base
+    - Any AutoModelForSequenceClassification compatible model
     """
     
     def __init__(self, config: TrainingConfig):
         super().__init__()
         self.config = config
         self.num_labels = config.num_labels
+        self.model_name = config.model_name
         
         # Build the model
         self._build_model()
@@ -72,11 +76,11 @@ class MentalHealthClassifier(nn.Module):
     
     def _build_model(self):
         """Build the base model with LoRA adapter."""
-        logger.info(f"Building model: {self.config.model_name}")
+        logger.info(f"Building model: {self.model_name}")
         
         # Load model configuration
         model_config = AutoConfig.from_pretrained(
-            self.config.model_name,
+            self.model_name,
             num_labels=self.num_labels,
             hidden_dropout_prob=self.config.hidden_dropout_prob,
             attention_probs_dropout_prob=self.config.attention_probs_dropout_prob,
@@ -84,20 +88,19 @@ class MentalHealthClassifier(nn.Module):
         
         # Load base model in fp32 ALWAYS.
         # fp16 is handled by autocast + GradScaler in the trainer's train_epoch().
-        # DO NOT set torch_dtype=float16 here — it causes "Attempting to unscale FP16 gradients"
-        # because the model parameters are already fp16, making GradScaler's unscaling invalid.
         self.base_model = AutoModelForSequenceClassification.from_pretrained(
-            self.config.model_name,
+            self.model_name,
             config=model_config,
             ignore_mismatched_sizes=True,
             torch_dtype=torch.float32,
         )
         
-        # Check if it's DeBERTa-v3 (has different layer naming)
-        is_deberta = "deberta" in self.config.model_name.lower()
-        is_xlmr = "xlm-roberta" in self.config.model_name.lower()
+        # Check model architecture
+        is_deberta = "deberta" in self.model_name.lower()
+        is_xlmr = "xlm-roberta" in self.model_name.lower()
+        is_phobert = "phobert" in self.model_name.lower()
         
-        logger.info(f"Model type: {'DeBERTa-v3' if is_deberta else 'XLM-RoBERTa' if is_xlmr else 'Other'}")
+        logger.info(f"Model type: {'DeBERTa-v3' if is_deberta else 'XLM-RoBERTa' if is_xlmr else 'PhoBERT' if is_phobert else 'Other'}")
         
         # Apply gradient checkpointing to save VRAM
         if self.config.gradient_checkpointing:
@@ -117,13 +120,13 @@ class MentalHealthClassifier(nn.Module):
         Apply LoRA configuration to the base model.
         
         For DeBERTa-v3: target_modules=["query_proj", "value_proj", "key_proj", "output_proj"]
-        For RoBERTa/XLM-R: target_modules=["query", "value", "key", "output.dense"]
+        For RoBERTa/XLM-R/PhoBERT: target_modules=["query", "value", "key", "output.dense"]
         """
         # Determine target modules based on model architecture
         if is_deberta:
             target_modules = ["query_proj", "value_proj", "key_proj", "output_proj"]
         else:
-            # XLM-RoBERTa/RoBERTa
+            # XLM-RoBERTa/RoBERTa/PhoBERT
             target_modules = ["query", "value", "key", "output.dense"]
         
         # Use custom target modules if provided
@@ -238,17 +241,288 @@ class MentalHealthClassifier(nn.Module):
             self.base_model.save_pretrained(save_dir)
             logger.info(f"Full model saved to {save_dir}")
         
-        # Save label mapping
-        import json
-        label_mapping = {
+        # Save label mapping and model info
+        model_info = {
+            "model_name": self.model_name,
+            "num_labels": self.num_labels,
             "id2label": {str(i): l for i, l in enumerate(MENTAL_HEALTH_LABELS)},
             "label2id": {l: i for i, l in enumerate(MENTAL_HEALTH_LABELS)},
-            "num_labels": self.num_labels,
         }
-        with open(os.path.join(save_dir, "label_mapping.json"), "w") as f:
-            json.dump(label_mapping, f, indent=2)
+        with open(os.path.join(save_dir, "model_info.json"), "w") as f:
+            json.dump(model_info, f, indent=2)
         
-        logger.info(f"Label mapping saved to {save_dir}")
+        logger.info(f"Model info saved to {save_dir}")
+
+
+class EnsembleMentalHealthClassifier(nn.Module):
+    """
+    Ensemble of 3 mental health classifiers with weighted voting.
+    
+    Models:
+    1. DeBERTa-v3-base (weight 0.40) — best English understanding
+    2. XLM-RoBERTa-base (weight 0.35) — multilingual, different attention
+    3. PhoBERT-base (weight 0.25) — syllable-level BPE, different tokenization
+    
+    These models have fundamentally different architectures and tokenization,
+    so their errors are decorrelated → ensemble reduces variance significantly.
+    
+    Strategy:
+    - Each model is trained independently (sequentially to fit RTX 4060 16GB)
+    - At inference, all 3 are loaded and their probabilities are averaged
+    - Weighted average: final_prob = Σ(weight_i * prob_i)
+    - Only loads one model at a time to save VRAM during inference
+    """
+    
+    def __init__(
+        self,
+        config: TrainingConfig,
+        device: str = "cuda",
+    ):
+        super().__init__()
+        self.config = config
+        self.device = torch.device(device)
+        self.num_labels = config.num_labels
+        
+        # Ensemble configuration
+        self.model_keys = config.ensemble_model_keys
+        self.weights = self._get_weights(config)
+        
+        # Models (lazy loaded)
+        self.models: Dict[str, MentalHealthClassifier] = {}
+        self.tokenizers: Dict[str, PreTrainedTokenizer] = {}
+        
+        logger.info(f"Ensemble initialized with {len(self.model_keys)} models")
+        for key in self.model_keys:
+            info = ENSEMBLE_MODELS[key]
+            logger.info(f"  {key}: {info['name']} (weight={info['weight']})")
+    
+    def _get_weights(self, config: TrainingConfig) -> Dict[str, float]:
+        """Get ensemble weights from config or defaults."""
+        if config.ensemble_weights is not None:
+            return config.ensemble_weights
+        return {
+            key: ENSEMBLE_MODELS[key]["weight"]
+            for key in config.ensemble_model_keys
+        }
+    
+    def load_model(self, model_key: str, checkpoint_dir: str):
+        """
+        Load a single ensemble model from its checkpoint.
+        
+        Each model is loaded separately to manage VRAM.
+        
+        Args:
+            model_key: One of "deberta", "xlmr", "phobert"
+            checkpoint_dir: Path to the model's checkpoint directory
+        """
+        if model_key in self.models:
+            logger.info(f"Model {model_key} already loaded")
+            return
+        
+        model_info = ENSEMBLE_MODELS[model_key]
+        model_name = model_info["name"]
+        
+        logger.info(f"Loading ensemble model '{model_key}' ({model_name}) from {checkpoint_dir}")
+        
+        # Load tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            use_fast=True,
+            add_prefix_space=True,
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token or "<pad>"
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token_id = 0
+        
+        # Create a config specific to this model
+        model_config = TrainingConfig()
+        model_config.model_name = model_name
+        model_config.num_labels = self.num_labels
+        model_config.use_lora = True
+        model_config.lora_target_modules = model_info["lora_target_modules"]
+        
+        # Build model architecture
+        model = MentalHealthClassifier(model_config)
+        
+        # Load LoRA adapter weights
+        adapter_path = os.path.join(checkpoint_dir, "adapter_model.safetensors")
+        if os.path.exists(adapter_path):
+            base_model = AutoModelForSequenceClassification.from_pretrained(
+                model_name,
+                num_labels=self.num_labels,
+            )
+            model.base_model = PeftModel.from_pretrained(base_model, checkpoint_dir)
+        
+        model.to(self.device)
+        model.eval()
+        
+        self.models[model_key] = model
+        self.tokenizers[model_key] = tokenizer
+        
+        logger.info(f"Loaded {model_key} with {sum(p.numel() for p in model.parameters() if p.requires_grad):,} trainable params")
+    
+    def unload_model(self, model_key: str):
+        """Unload a model from GPU to free VRAM."""
+        if model_key in self.models:
+            self.models[model_key].to("cpu")
+            del self.models[model_key]
+            del self.tokenizers[model_key]
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            logger.info(f"Unloaded {model_key} from GPU")
+    
+    def unload_all(self):
+        """Unload all models to free VRAM."""
+        for key in list(self.models.keys()):
+            self.unload_model(key)
+    
+    @torch.no_grad()
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Ensemble forward pass with weighted averaging.
+        
+        Requires all models to be loaded first via load_model().
+        
+        Args:
+            input_ids: Token IDs (using DeBERTa's tokenizer)
+            attention_mask: Attention mask
+            labels: Ground truth labels (optional)
+            
+        Returns:
+            Dict with:
+              - "logits": aggregated logits
+              - "probs": weighted average probabilities
+              - "individual_probs": dict of per-model probabilities
+              - "ensemble_weights": dict of per-model weights
+              - "loss": optional loss
+        """
+        if not self.models:
+            raise RuntimeError("No models loaded. Call load_model() for each model first.")
+        
+        # Get per-model probabilities
+        individual_probs = {}
+        all_probs_weighted = None
+        total_weight = 0.0
+        
+        for key in self.model_keys:
+            if key not in self.models:
+                logger.warning(f"Model {key} not loaded, skipping")
+                continue
+            
+            model = self.models[key]
+            
+            # Forward pass
+            outputs = model(input_ids, attention_mask)
+            probs = outputs["probs"]
+            weight = self.weights[key]
+            
+            individual_probs[key] = probs
+            
+            # Weighted sum
+            if all_probs_weighted is None:
+                all_probs_weighted = probs * weight
+            else:
+                all_probs_weighted += probs * weight
+            total_weight += weight
+        
+        # Normalize by total weight
+        avg_probs = all_probs_weighted / total_weight
+        
+        # Compute aggregated logits (inverse softmax approximation)
+        avg_logits = torch.log(avg_probs + 1e-10)
+        
+        result = {
+            "logits": avg_logits,
+            "probs": avg_probs,
+            "individual_probs": individual_probs,
+            "ensemble_weights": dict(self.weights),
+        }
+        
+        if labels is not None:
+            # Use CE loss on the averaged probabilities for evaluation
+            loss = F.cross_entropy(avg_logits, labels)
+            result["loss"] = loss
+        
+        return result
+    
+    def predict(self, text: str, tokenizer_key: str = "deberta") -> Dict:
+        """
+        Predict mental health condition for a single text using ensemble.
+        
+        Args:
+            text: Input text
+            tokenizer_key: Which model's tokenizer to use for encoding
+            
+        Returns:
+            Dict with ensemble predictions
+        """
+        if not self.models:
+            raise RuntimeError("No models loaded. Call load_model() for each model first.")
+        
+        # Use the specified model's tokenizer
+        tokenizer = self.tokenizers.get(tokenizer_key)
+        if tokenizer is None:
+            tokenizer = list(self.tokenizers.values())[0]
+        
+        # Tokenize
+        encoded = tokenizer(
+            text,
+            truncation=True,
+            max_length=self.config.max_seq_length,
+            padding="max_length",
+            return_tensors="pt",
+        )
+        
+        input_ids = encoded["input_ids"].to(self.device)
+        attention_mask = encoded["attention_mask"].to(self.device)
+        
+        # Ensemble forward
+        outputs = self.forward(input_ids, attention_mask)
+        avg_probs = outputs["probs"].cpu().numpy()[0]
+        individual_probs = {
+            k: v.cpu().numpy()[0] for k, v in outputs["individual_probs"].items()
+        }
+        
+        prediction = int(torch.argmax(outputs["probs"], dim=-1)[0])
+        confidence = float(torch.max(outputs["probs"], dim=-1).values[0])
+        
+        # Get top 3 from ensemble
+        top3_indices = torch.argsort(outputs["probs"][0], descending=True)[:3].tolist()
+        top3 = [
+            {"label": MENTAL_HEALTH_LABELS[i], "confidence": float(avg_probs[i])}
+            for i in top3_indices
+        ]
+        
+        result = {
+            "ensemble_prediction": MENTAL_HEALTH_LABELS[prediction],
+            "ensemble_confidence": confidence,
+            "all_scores_ensemble": {
+                label: float(avg_probs[i])
+                for i, label in enumerate(MENTAL_HEALTH_LABELS)
+            },
+            "per_model_predictions": {
+                key: {
+                    "label": MENTAL_HEALTH_LABELS[int(np.argmax(individual_probs[key]))],
+                    "confidence": float(np.max(individual_probs[key])),
+                    "scores": {
+                        label: float(individual_probs[key][i])
+                        for i, label in enumerate(MENTAL_HEALTH_LABELS)
+                    }
+                }
+                for key in individual_probs
+            },
+            "top_predictions": top3,
+            "weights": self.weights,
+            "num_models_used": len(self.models),
+        }
+        
+        return result
 
 
 def build_model(config: TrainingConfig) -> MentalHealthClassifier:
@@ -273,13 +547,21 @@ def load_trained_model(
     
     Args:
         model_path: Path to saved model (LoRA adapter + classifier head)
-        config: Optional TrainingConfig (will load from model_path if available)
+        config: Optional TrainingConfig
         
     Returns:
         Loaded MentalHealthClassifier in eval mode
     """
     if config is None:
         config = TrainingConfig()
+    
+    # Determine model name from saved model_info if available
+    model_info_path = os.path.join(model_path, "model_info.json")
+    if os.path.exists(model_info_path):
+        with open(model_info_path) as f:
+            model_info = json.load(f)
+        config.model_name = model_info.get("model_name", config.model_name)
+        config.num_labels = model_info.get("num_labels", config.num_labels)
     
     # Build model architecture
     model = MentalHealthClassifier(config)
@@ -288,7 +570,6 @@ def load_trained_model(
     adapter_path = os.path.join(model_path, "adapter_model.safetensors")
     if os.path.exists(adapter_path):
         logger.info(f"Loading LoRA adapter from {model_path}")
-        # PeftModel requires loading from the base model
         base_model = AutoModelForSequenceClassification.from_pretrained(
             config.model_name,
             num_labels=config.num_labels,

@@ -28,7 +28,10 @@ from .config import (
 )
 from .preprocessor import RedditTextPreprocessor
 from .dataset import MentalHealthDataset, create_dataloaders
-from .model import MentalHealthClassifier
+from .model import (
+    MentalHealthClassifier,
+    EnsembleMentalHealthClassifier,
+)
 from .losses import (
     FocalLoss,
     WeightedCrossEntropyLoss,

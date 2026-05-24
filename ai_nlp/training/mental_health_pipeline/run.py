@@ -44,6 +44,7 @@ from ai_nlp.training.mental_health_pipeline import (
     MHConfig,
     MentalHealthPipeline,
     RedditTextPreprocessor,
+    MENTAL_HEALTH_LABELS,
 )
 from ai_nlp.training.mental_health_pipeline.preprocessor import analyze_text_quality
 
@@ -104,6 +105,7 @@ Examples:
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs (default: 20)")
     parser.add_argument("--accum", type=int, default=None, help="Gradient accumulation steps (default: 2)")
     parser.add_argument("--loss", type=str, default=None, choices=["focal", "weighted_ce", "ce", "label_smooth_ce", "confusion_focal"])
+    parser.add_argument("--ensemble", action="store_true", help="Train ensemble (DeBERTa-v3 + XLM-R + PhoBERT)")
     parser.add_argument("--fp16", action="store_true", help="Enable fp16 mixed precision")
     parser.add_argument("--no-aug", action="store_true", help="Disable data augmentation")
     parser.add_argument("--no-balanced", action="store_true", help="Disable balanced sampling")
@@ -167,8 +169,14 @@ def run_training(args):
     if args.output_dir:
         config.output_dir = args.output_dir
     
+    # Ensemble mode
+    if args.ensemble:
+        config.use_ensemble = True
+        logger.info("Ensemble mode enabled: DeBERTa-v3 + XLM-RoBERTa + PhoBERT")
+    
     # Log configuration
     logger.info(f"Model: {config.model_name}")
+    logger.info(f"Ensemble: {config.use_ensemble}")
     logger.info(f"Learning rate: {config.learning_rate}")
     logger.info(f"Batch size: {config.batch_size}")
     logger.info(f"Grad accum: {config.gradient_accumulation_steps}")
@@ -196,6 +204,9 @@ def run_prediction(args):
     logger.info("MENTAL HEALTH PREDICTION MODE")
     logger.info("=" * 60)
     
+    import torch
+    import numpy as np
+    
     config = TrainingConfig()
     mh_config = MHConfig()
     
@@ -205,8 +216,6 @@ def run_prediction(args):
         mh_config.max_length = args.max_length
     if args.model:
         config.model_name = args.model
-    
-    pipeline = MentalHealthPipeline(config=config, mh_config=mh_config)
     
     # Check if model exists
     best_model_path = os.path.join(
@@ -219,32 +228,73 @@ def run_prediction(args):
         )
         return None
     
-    # Load model
-    pipeline.tokenizer = pipeline._get_tokenizer()
-    pipeline.model = build_model(config)
+    # Load tokenizer
+    from ai_nlp.training.mental_health_pipeline.dataset import get_tokenizer
+    tokenizer = get_tokenizer(config)
     
-    # Try loading LoRA adapter
+    # Load model
+    from ai_nlp.training.mental_health_pipeline.model import build_model
     from peft import PeftModel
     from transformers import AutoModelForSequenceClassification
     
+    model = build_model(config)
+    
+    # Load LoRA adapter
     base_model = AutoModelForSequenceClassification.from_pretrained(
         config.model_name, num_labels=config.num_labels
     )
-    pipeline.model.base_model = PeftModel.from_pretrained(
+    model.base_model = PeftModel.from_pretrained(
         base_model, os.path.join(config.get_checkpoint_dir(), "best_model")
     )
-    pipeline.model.to(config.device)
-    pipeline.model.eval()
+    model.to(config.device)
+    model.eval()
+    
+    # Prediction helper
+    def predict_single(text: str) -> dict:
+        """Predict mental health condition for a single text."""
+        encoded = tokenizer(
+            text,
+            truncation=True,
+            max_length=mh_config.max_length,
+            padding="max_length",
+            return_tensors="pt",
+        )
+        
+        input_ids = encoded["input_ids"].to(config.device)
+        attention_mask = encoded["attention_mask"].to(config.device)
+        
+        with torch.no_grad():
+            outputs = model(input_ids, attention_mask)
+            probs = outputs["probs"].cpu().numpy()[0]
+            prediction = int(np.argmax(probs))
+            confidence = float(probs[prediction])
+        
+        # Top 3
+        top3_indices = np.argsort(probs)[::-1][:3]
+        top3 = [
+            {"label": MENTAL_HEALTH_LABELS[int(i)], "confidence": float(probs[int(i)])}
+            for i in top3_indices
+        ]
+        
+        return {
+            "text": text[:200],
+            "primary_condition": MENTAL_HEALTH_LABELS[prediction],
+            "primary_confidence": confidence,
+            "all_scores": {
+                label: float(probs[i])
+                for i, label in enumerate(MENTAL_HEALTH_LABELS)
+            },
+            "top_predictions": top3,
+        }
     
     # Predict single text
     if args.text:
-        result = pipeline.predict(args.text)
+        result = predict_single(args.text)
         
         print("\n" + "=" * 50)
         print(f"Text: {result['text'][:100]}...")
         print(f"Primary Condition: {result['primary_condition']}")
         print(f"Confidence: {result['primary_confidence']:.4f}")
-        print(f"Needs Attention: {result['needs_attention']}")
         print("\nAll Scores:")
         for label, score in sorted(
             result["all_scores"].items(),
@@ -269,18 +319,18 @@ def run_prediction(args):
             data = json.load(f)
         
         texts = data if isinstance(data, list) else data.get("texts", [data])
-        results = []
+        all_results = []
         
         for text in texts:
-            result = pipeline.predict(text)
-            results.append(result)
+            result = predict_single(text)
+            all_results.append(result)
         
         if args.output_file:
             with open(args.output_file, "w") as f:
-                json.dump(results, f, indent=2)
+                json.dump(all_results, f, indent=2)
             logger.info(f"Results saved to {args.output_file}")
     
-    return results
+    return
 
 
 def run_eda(args):

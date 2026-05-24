@@ -127,6 +127,37 @@ MH_KEYWORDS = {
     "Normal": [],
 }
 
+# ============================================================
+# Ensemble Model Definitions
+# ============================================================
+
+# Default ensemble: 3 diverse models for better generalization
+ENSEMBLE_MODELS = {
+    "deberta": {
+        "name": "microsoft/deberta-v3-base",
+        "weight": 0.4,           # Highest weight — best English performance
+        "lora_target_modules": ["query_proj", "value_proj", "key_proj", "output_proj"],
+        "learning_rate": 3e-5,
+        "batch_size": 16,
+        "is_deberta": True,
+    },
+    "xlmr": {
+        "name": "FacebookAI/xlm-roberta-base",
+        "weight": 0.35,          # Good for multilingual + different attention
+        "lora_target_modules": ["query", "value", "key", "output.dense"],
+        "learning_rate": 2e-5,
+        "batch_size": 12,        # XLM-R is larger (279M), use smaller batch
+        "is_deberta": False,
+    },
+    "phobert": {
+        "name": "vinai/phobert-base",
+        "weight": 0.25,          # Different tokenization (syllable-level BPE)
+        "lora_target_modules": ["query", "value", "key", "output.dense"],
+        "learning_rate": 2e-5,
+        "batch_size": 16,
+        "is_deberta": False,
+    },
+}
 
 # ============================================================
 # Training Configuration
@@ -156,50 +187,10 @@ class TrainingConfig:
     random_seed: int = 42
 
     # ---------- Model ----------
-    # DeBERTa-v3-base is RECOMMENDED over XLM-RoBERTa because:
-    # 1. DeBERTa-v3 uses disentangled attention + enhanced masked decoder
-    #    → better at capturing nuanced mental health language patterns
-    # 2. DeBERTa-v3-base has 12 layers, 768 hidden, 12 heads → 184M params
-    #    → comparable size to XLM-RoBERTa-base (279M) but MORE EFFICIENT
-    # 3. DeBERTa-v3 consistently outperforms RoBERTa on GLUE/SuperGLUE
-    # 4. For English-only mental health detection, XLM's multilingual
-    #    advantage is unnecessary → DeBERTa is strictly better
-    # 5. DeBERTa-v3-base uses ∼5.4GB VRAM with batch 16 + LoRA
-    #    → fits well on RTX 4060 16GB
-    #
-    # XLM-RoBERTa-base alternative: "FacebookAI/xlm-roberta-base"
-    #   - Good if you plan to extend to multilingual later (e.g., Vietnamese)
-    #   - Slightly more VRAM (~6.2GB with same settings)
-    #   - Slightly lower F1 on English-only tasks
-    #
-    # PhoBERT alternative for Vietnamese adaptation:
-    #   - "vinai/phobert-base" for Vietnamese-only
-    #   - "vinai/phobert-large" for higher accuracy
-    #   - Requires Vietnamese tokenizer (replaces WordPiece with BPE-syllable)
-    #   - Best practice: fine-tune PhoBERT separately on Vietnamese data
     model_name: str = "microsoft/deberta-v3-base"
-    # Alternative: "FacebookAI/xlm-roberta-base" (for multilingual later)
-
     num_labels: int = 7
 
-    max_seq_length: int = 256  # KEY: 256 > 128 for Reddit mental health posts
-    """
-    Why 256 tokens instead of 512?
-
-    RTX 4060 16GB VRAM analysis:
-    - DeBERTa-v3-base + LoRA with max_length=512:
-      ~10.2GB VRAM for batch_size=8, grad_accum=4
-      → Leaves only ~5.8GB for overhead, data, etc.
-    - DeBERTa-v3-base + LoRA with max_length=256:
-      ~5.8GB VRAM for batch_size=16, grad_accum=2
-      → Leaves ~10.2GB for overhead → MUCH more stable
-    - 512 tokens is inefficient because:
-      a) Attention complexity is O(n²) → 512 is 4× more compute than 256
-      b) Most Reddit mental health posts are 50-200 tokens
-      c) The 99th percentile token length in this dataset is ~240 tokens
-      d) Only ~2% of samples exceed 256 tokens (truncate those)
-    - Recommend: max_length=256 with batch_size=16
-    """
+    max_seq_length: int = 256
 
     dropout: float = 0.1
     hidden_dropout_prob: float = 0.1
@@ -207,100 +198,85 @@ class TrainingConfig:
 
     # ---------- LoRA Configuration ----------
     use_lora: bool = True
-    lora_r: int = 8       # Low rank. 8 is good for 7 classes. 16 for more capacity.
-    lora_alpha: int = 32  # Scaling = alpha / r = 4
+    lora_r: int = 8
+    lora_alpha: int = 32
     lora_dropout: float = 0.1
     lora_target_modules: List[str] = field(default_factory=lambda: [
         "query_proj", "value_proj", "key_proj", "output_proj",
-        # DeBERTa uses 'query_proj', 'key_proj', 'value_proj', 'output_proj'
-        # For XLMRoberta: ["query", "value", "key", "output.dense"]
     ])
-    lora_bias: str = "none"    # Don't train bias for efficiency
+    lora_bias: str = "none"
     lora_task_type: str = "SEQ_CLS"
 
     # ---------- Training Hyperparameters ----------
-    num_epochs: int = 20        # With early stopping, usually stops at 8-12
-    batch_size: int = 16        # RTX 4060 16GB: 16 with DeBERTa-v3 + LoRA + 256 tokens
+    num_epochs: int = 20
+    batch_size: int = 16
     eval_batch_size: int = 32
-    learning_rate: float = 3e-5  # Slightly higher for DeBERTa-v3 (2e-5 for RoBERTa)
+    learning_rate: float = 3e-5
     weight_decay: float = 0.01
     adam_epsilon: float = 1e-8
     max_grad_norm: float = 1.0
-    gradient_accumulation_steps: int = 2  # Effective batch = 32
+    gradient_accumulation_steps: int = 2
 
     # ---------- Scheduler ----------
-    scheduler: str = "cosine"  # Cosine with warmup restarts
-    warmup_ratio: float = 0.1  # 10% of total steps for warmup
-    warmup_steps: int = 0      # If 0, computed from warmup_ratio * total_steps
+    scheduler: str = "cosine"
+    warmup_ratio: float = 0.1
+    warmup_steps: int = 0
 
     # ---------- Loss ----------
-    # Options:
-    #   "ce"          — plain CrossEntropy
-    #   "weighted_ce" — CrossEntropy with class weights (handle imbalance)
-    #   "focal"       — Focal Loss (γ=2.0 focus on hard examples)
-    #   "label_smooth_ce" — Label smoothing CE
-    #   "confusion_focal" — Focal loss + confusion penalty for hard pairs
     loss_type: str = "confusion_focal"
     focal_gamma: float = 2.0
-    focal_alpha: Optional[List[float]] = None  # None = auto-compute from class counts
-    label_smoothing: float = 0.1  # Used when loss_type="label_smooth_ce"
+    focal_alpha: Optional[List[float]] = None
+    label_smoothing: float = 0.1
     
-    # Per-class gamma for FocalLoss (higher = more focus on that class)
-    # Labels: Normal, Depression, Anxiety, Bipolar, Stress, Suicidal, Personality_disorder
-    # Higher gamma on Depression & Suicidal to fix the confusion matrix
     per_class_gamma: Optional[List[float]] = field(default_factory=lambda: [
         2.0,    # Normal
-        3.5,    # Depression — most confused, highest focus
-        2.5,    # Anxiety — moderately confused
+        3.5,    # Depression
+        2.5,    # Anxiety
         2.0,    # Bipolar
         2.0,    # Stress
-        3.0,    # Suicidal — very confused with Depression
+        3.0,    # Suicidal
         2.0,    # Personality_disorder
     ])
     
-    # Confusion penalty: weight for the auxiliary confusion-avoidance loss
-    # Helps penalize dangerous misclassifications (e.g., Suicidal → Depression)
     confusion_penalty_weight: float = 0.3
     
-    # Pairs to penalize: (true_class, wrong_class) pairs to discourage
-    # Critical: Suicidal misclassified as anything else is very dangerous
     confusion_penalty_pairs: List[Tuple[int, int]] = field(default_factory=lambda: [
-        (5, 1),  # Suicidal → Depression (50% of errors!)
-        (5, 2),  # Suicidal → Anxiety
-        (5, 0),  # Suicidal → Normal
-        (1, 5),  # Depression → Suicidal
-        (2, 1),  # Anxiety → Depression
-        (1, 3),  # Depression → Bipolar
+        (5, 1), (5, 2), (5, 0), (1, 5), (2, 1), (1, 3),
     ])
 
+    # ---------- Ensemble Settings ----------
+    use_ensemble: bool = False  # Train single model unless enabled
+    ensemble_model_keys: List[str] = field(default_factory=lambda: ["deberta", "xlmr", "phobert"])
+    ensemble_weights: Optional[Dict[str, float]] = None  # If None, uses defaults from ENSEMBLE_MODELS
+
     # ---------- Optimization ----------
-    mixed_precision: str = "fp16"  # "fp16", "bf16", "no"
-    gradient_checkpointing: bool = True  # Saves ~30% VRAM at 15% speed cost
-    use_compile: bool = False      # torch.compile (PyTorch 2.0+) - saves 5-10%
+    mixed_precision: str = "fp16"
+    gradient_checkpointing: bool = True
+    use_compile: bool = False
 
     # ---------- Early Stopping ----------
     early_stopping_patience: int = 5
     early_stopping_threshold: float = 0.001
-    early_stopping_metric: str = "macro_f1"  # Monitor macro F1 on validation
+    early_stopping_metric: str = "macro_f1"
 
     # ---------- Evaluation ----------
-    eval_strategy: str = "epoch"        # "epoch", "steps"
+    eval_strategy: str = "epoch"
     eval_steps: int = 50
     logging_steps: int = 10
-    save_strategy: str = "epoch"        # "epoch", "steps", "best"
-    save_total_limit: int = 3           # Keep only 3 best checkpoints
+    save_strategy: str = "epoch"
+    save_total_limit: int = 3
     metric_for_best_model: str = "macro_f1"
     greater_is_better: bool = True
 
     # ---------- Data Augmentation ----------
     use_augmentation: bool = True
-    aug_synonym_prob: float = 0.2       # 20% chance of synonym replacement
-    aug_random_swap: int = 2            # Max swaps per sample
-    aug_random_delete_prob: float = 0.05  # 5% deletion noise
+    aug_synonym_prob: float = 0.2
+    aug_random_swap: int = 2
+    aug_random_delete_prob: float = 0.05
 
     # ---------- Class Imbalance Handling ----------
     use_balanced_sampling: bool = True
-    balancing_strategy: str = "oversample"  # "oversample", "weights", "both"
+    balancing_strategy: str = "oversample"
 
     # ---------- Threshold Optimization ----------
     optimize_thresholds: bool = True
@@ -311,8 +287,8 @@ class TrainingConfig:
     seed: int = 42
 
     # ---------- Hardware ----------
-    num_workers: int = 4  # Adjust based on CPU cores (4 is safe for most)
-    pin_memory: bool = True  # Faster GPU transfer
+    num_workers: int = 4
+    pin_memory: bool = True
 
     # ---------- Paths (computed) ----------
 
@@ -326,6 +302,14 @@ class TrainingConfig:
 
     def get_checkpoint_dir(self) -> str:
         return os.path.join(self.checkpoint_dir, "mental_health_model")
+
+    def get_ensemble_checkpoint_dir(self, model_key: str) -> str:
+        """Get checkpoint directory for a specific ensemble model."""
+        return os.path.join(self.checkpoint_dir, f"mental_health_ensemble_{model_key}")
+
+    def get_ensemble_output_dir(self) -> str:
+        """Get output directory for the full ensemble."""
+        return os.path.join(self.output_dir, "mental_health_ensemble")
 
     def get_output_model_dir(self) -> str:
         return os.path.join(self.output_dir, "mental_health_model")
@@ -360,34 +344,32 @@ class MHConfig:
     text_column: str = "statement"
 
     # Preprocessing
-    min_text_length: int = 5           # Remove samples shorter than 5 chars
-    max_text_length: int = 512         # Cap text length in characters
+    min_text_length: int = 5
+    max_text_length: int = 512
     remove_duplicates: bool = True
-    remove_leakage: bool = True        # Remove texts that contain their label name
+    remove_leakage: bool = True
 
-    # Label names that could leak (diagnosis words in text)
     leakage_words: List[str] = field(default_factory=lambda: [
         "depression", "anxiety", "bipolar", "suicidal",
         "personality disorder", "stress", "stressed",
-        # But NOT "normal" — too common
     ])
 
     # Train/Val/Test split
     train_ratio: float = 0.80
     val_ratio: float = 0.10
     test_ratio: float = 0.10
-    stratify: bool = True  # Stratified split for class balance
+    stratify: bool = True
 
     # Augmentation
     use_synonym_replacement: bool = True
-    use_eda: bool = True               # Easy Data Augmentation
-    eda_alpha: float = 0.1            # % of words to augment
-    num_augmented_samples: int = 0    # 0 = auto (fill to match majority class)
+    use_eda: bool = True
+    eda_alpha: float = 0.1
+    num_augmented_samples: int = 0
 
     # Tokenization
     max_length: int = 256
     truncation: bool = True
-    padding: str = "max_length"       # "max_length" for fixed-size batches
+    padding: str = "max_length"
 
     # Threshold optimization
     default_threshold: float = 0.5

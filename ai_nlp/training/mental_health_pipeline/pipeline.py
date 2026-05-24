@@ -13,6 +13,11 @@ Orchestrates:
 7. Threshold optimization
 8. Model export and saving
 9. Error analysis and reporting
+
+Ensemble mode:
+- Trains 3 models independently (sequentially): DeBERTa-v3, XLM-R, PhoBERT
+- Each model uses the same data but different architectures
+- Inference uses weighted averaging of all 3 softmax outputs
 """
 
 import os
@@ -20,7 +25,7 @@ import sys
 import json
 import logging
 import time
-from typing import Dict, Optional, Any, Tuple
+from typing import Dict, Optional, Any, Tuple, List
 from pathlib import Path
 
 import torch
@@ -31,10 +36,16 @@ from .config import (
     MENTAL_HEALTH_LABELS,
     TrainingConfig,
     MHConfig,
+    ENSEMBLE_MODELS,
 )
 from .preprocessor import RedditTextPreprocessor, analyze_text_quality
 from .dataset import create_dataloaders, get_tokenizer
-from .model import MentalHealthClassifier, build_model
+from .model import (
+    MentalHealthClassifier,
+    EnsembleMentalHealthClassifier,
+    build_model,
+    load_trained_model,
+)
 from .trainer import MentalHealthTrainer
 from .metrics import MentalHealthMetrics, compute_metrics
 from .threshold_optimizer import ThresholdOptimizer
@@ -52,8 +63,9 @@ class MentalHealthPipeline:
         pipeline = MentalHealthPipeline(config, mh_config)
         results = pipeline.run()
         
-        # For inference later:
-        results = pipeline.predict("I feel so hopeless and tired all the time")
+        # Ensemble training:
+        config.use_ensemble = True
+        results = pipeline.run_ensemble()
     """
     
     def __init__(
@@ -78,12 +90,9 @@ class MentalHealthPipeline:
         
         logger.info("MentalHealthPipeline initialized")
         logger.info(f"Model: {self.config.model_name}")
+        logger.info(f"Ensemble mode: {self.config.use_ensemble}")
         logger.info(f"Device: {self.config.device}")
         logger.info(f"Max seq length: {self.mh_config.max_length}")
-        logger.info(f"Loss: {self.config.loss_type}")
-        logger.info(f"Mixed precision: {self.config.mixed_precision}")
-        logger.info(f"Gradient accumulation: {self.config.gradient_accumulation_steps}")
-        logger.info(f"Effective batch: {self.config.batch_size * self.config.gradient_accumulation_steps}")
     
     def _setup_logging(self):
         """Configure logging with file and console handlers."""
@@ -108,7 +117,7 @@ class MentalHealthPipeline:
     
     def run(self) -> Dict[str, Any]:
         """
-        Run the full training pipeline.
+        Run the full training pipeline (single model mode).
         
         Steps:
         1. Load and preprocess data
@@ -124,8 +133,11 @@ class MentalHealthPipeline:
         Returns:
             Dict with training results, metrics, and model path
         """
+        if self.config.use_ensemble:
+            return self.run_ensemble()
+        
         logger.info("=" * 60)
-        logger.info("MENTAL HEALTH TRAINING PIPELINE")
+        logger.info("MENTAL HEALTH TRAINING PIPELINE (Single Model)")
         logger.info("=" * 60)
         
         # Step 1: Load tokenizer
@@ -192,12 +204,6 @@ class MentalHealthPipeline:
         final_model_path = self.config.get_output_model_dir()
         self.model.save_pretrained(final_model_path)
         
-        # Also save to checkpoint best_model directory
-        best_model_path = os.path.join(
-            self.config.get_checkpoint_dir(), "best_model"
-        )
-        # If best model was saved during training, it's already there
-        
         # Save config
         config_path = os.path.join(self.config.get_checkpoint_dir(), "training_config.json")
         self.config.save(config_path)
@@ -205,10 +211,140 @@ class MentalHealthPipeline:
         logger.info(f"Model saved to: {final_model_path}")
         
         # Step 8: Generate final report
-        logger.info("\n" + "=" * 60)
-        logger.info("FINAL REPORT")
+        results = self._generate_results(training_results, test_results, best_thresholds, best_threshold_score, final_model_path)
+        
+        return results
+    
+    def run_ensemble(self) -> Dict[str, Any]:
+        """
+        Run ensemble training: train 3 models independently (sequentially).
+        
+        Models: DeBERTa-v3, XLM-RoBERTa, PhoBERT
+        Each model is trained from scratch on the same data split.
+        After training, all 3 are saved separately for inference.
+        
+        Returns:
+            Dict with per-model results and ensemble summary
+        """
+        logger.info("=" * 60)
+        logger.info("MENTAL HEALTH TRAINING PIPELINE (Ensemble)")
+        logger.info(f"Models: {self.config.ensemble_model_keys}")
         logger.info("=" * 60)
         
+        model_keys = self.config.ensemble_model_keys
+        all_results = {}
+        
+        # Train each model independently
+        for model_key in model_keys:
+            model_info = ENSEMBLE_MODELS[model_key]
+            
+            logger.info("\n" + "=" * 50)
+            logger.info(f"TRAINING MODEL: {model_key} ({model_info['name']})")
+            logger.info("=" * 50)
+            
+            # Create model-specific config
+            model_config = TrainingConfig()
+            # Copy common settings
+            for field_name in self.config.__dataclass_fields__:
+                if hasattr(self.config, field_name):
+                    setattr(model_config, field_name, getattr(self.config, field_name))
+            
+            # Override with model-specific settings
+            model_config.model_name = model_info["name"]
+            model_config.lora_target_modules = model_info["lora_target_modules"]
+            model_config.learning_rate = model_info["learning_rate"]
+            model_config.batch_size = model_info["batch_size"]
+            model_config.checkpoint_dir = self.config.checkpoint_dir
+            
+            # Create model-specific tokenizer
+            logger.info(f"Loading tokenizer for {model_key}...")
+            tokenizer = get_tokenizer(model_config)
+            
+            # Create dataloaders (same data split)
+            logger.info(f"Creating dataloaders for {model_key}...")
+            train_loader, val_loader, test_loader = create_dataloaders(
+                model_config, self.mh_config, tokenizer
+            )
+            
+            # Build model
+            logger.info(f"Building model {model_key}...")
+            model = build_model(model_config)
+            
+            # Train
+            logger.info(f"Training {model_key}...")
+            trainer = MentalHealthTrainer(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                config=model_config,
+            )
+            training_results = trainer.train()
+            
+            # Test
+            logger.info(f"Testing {model_key}...")
+            test_results = trainer.test(test_loader)
+            
+            # Save model to its checkpoint dir
+            checkpoint_dir = model_config.get_ensemble_checkpoint_dir(model_key)
+            model.save_pretrained(checkpoint_dir)
+            
+            all_results[model_key] = {
+                "model_name": model_info["name"],
+                "weight": model_info["weight"],
+                "training": training_results,
+                "test_metrics": test_results,
+                "checkpoint_dir": checkpoint_dir,
+            }
+            
+            logger.info(f"  ✓ {model_key} complete! Macro F1: {test_results.get('macro_f1', 0.0):.4f}")
+            
+            # Clear GPU cache before next model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        
+        # Compute ensemble metrics (simulated: average of per-model metrics)
+        logger.info("\n" + "=" * 50)
+        logger.info("ENSEMBLE RESULTS SUMMARY")
+        logger.info("=" * 50)
+        
+        ensemble_results = {}
+        for model_key in model_keys:
+            r = all_results[model_key]
+            macro_f1 = r["test_metrics"].get("macro_f1", 0.0)
+            accuracy = r["test_metrics"].get("accuracy", 0.0)
+            logger.info(f"  {model_key:12s} ({ENSEMBLE_MODELS[model_key]['name']:30s}): "
+                       f"Macro F1={macro_f1:.4f}, Acc={accuracy:.4f}, "
+                       f"Weight={ENSEMBLE_MODELS[model_key]['weight']}")
+        
+        # Save ensemble config
+        ensemble_config = {
+            "models": {
+                key: {
+                    "name": ENSEMBLE_MODELS[key]["name"],
+                    "weight": ENSEMBLE_MODELS[key]["weight"],
+                    "checkpoint_dir": all_results[key]["checkpoint_dir"],
+                }
+                for key in model_keys
+            },
+            "num_labels": self.config.num_labels,
+            "labels": MENTAL_HEALTH_LABELS,
+            "trained_at": time.strftime('%Y%m%d_%H%M%S'),
+        }
+        ensemble_dir = self.config.get_ensemble_output_dir()
+        os.makedirs(ensemble_dir, exist_ok=True)
+        with open(os.path.join(ensemble_dir, "ensemble_config.json"), "w") as f:
+            json.dump(ensemble_config, f, indent=2)
+        logger.info(f"Ensemble config saved to {ensemble_dir}")
+        
+        return {
+            "ensemble": True,
+            "model_keys": model_keys,
+            "per_model": all_results,
+            "ensemble_config_path": os.path.join(ensemble_dir, "ensemble_config.json"),
+        }
+    
+    def _generate_results(self, training_results, test_results, best_thresholds, best_threshold_score, final_model_path):
+        """Generate final results dict."""
         results = {
             "model_config": {
                 "model_name": self.config.model_name,
@@ -232,6 +368,7 @@ class MentalHealthPipeline:
                 "total_time_seconds": training_results["total_time_seconds"],
                 "total_epochs_completed": training_results["total_epochs_completed"],
                 "early_stopped": training_results["early_stopped"],
+                "was_best_updated": training_results.get("was_best_updated", False),
             },
             "test_metrics": test_results,
             "thresholds": {
@@ -263,15 +400,16 @@ class MentalHealthPipeline:
         logger.info("TRAINING SUMMARY")
         logger.info("=" * 60)
         logger.info(f"Model: {self.config.model_name}")
-        logger.info(f"Data size (train/val/test): "
-                    f"{len(self.train_loader.dataset)}/"
-                    f"{len(self.val_loader.dataset)}/"
-                    f"{len(self.test_loader.dataset)}")
         logger.info(f"Training time: {training_results['total_time_seconds']:.1f}s")
         logger.info(f"Best epoch: {training_results['best_epoch'] + 1}")
         logger.info(f"Best macro F1 (val): {training_results['best_metric']:.4f}")
-        logger.info(f"Best thresholds macro F1: {best_threshold_score:.4f}")
         logger.info(f"\n--- Test Set ---")
+        self._log_test_summary(test_results)
+        
+        return results
+    
+    def _log_test_summary(self, test_results):
+        """Log test results summary."""
         logger.info(f"Accuracy: {test_results.get('accuracy', 0.0):.4f}")
         logger.info(f"Macro F1: {test_results.get('macro_f1', 0.0):.4f}")
         logger.info(f"Weighted F1: {test_results.get('weighted_f1', 0.0):.4f}")
@@ -290,74 +428,4 @@ class MentalHealthPipeline:
         
         logger.info("\n--- Top Misclassifications ---")
         for mc in test_results.get("misclassifications", [])[:5]:
-            logger.info(f"  True={mc['true_label']:25s} → Pred={mc['predicted_label']:25s}: {mc['count']} ({mc['percentage']:.1f}%)")
-        
-        logger.info("=" * 60)
-        
-        return results
-    
-    @torch.no_grad()
-    def predict(self, text: str) -> Dict[str, Any]:
-        """
-        Predict mental health condition for a single text.
-        
-        Args:
-            text: Input text
-            
-        Returns:
-            Dict with predictions
-        """
-        if self.model is None:
-            raise RuntimeError("Model not loaded. Run pipeline.run() first.")
-        
-        self.model.eval()
-        
-        # Tokenize
-        encoded = self.tokenizer(
-            text,
-            truncation=True,
-            max_length=self.mh_config.max_length,
-            padding="max_length",
-            return_tensors="pt",
-        )
-        
-        input_ids = encoded["input_ids"].to(self.model.device)
-        attention_mask = encoded["attention_mask"].to(self.model.device)
-        
-        # Predict
-        outputs = self.model(input_ids, attention_mask)
-        probs = outputs["probs"].cpu().numpy()[0]
-        prediction = int(np.argmax(probs))
-        confidence = float(probs[prediction])
-        
-        # Get top 3
-        top3_indices = np.argsort(probs)[::-1][:3]
-        top3 = [
-            {
-                "label": MENTAL_HEALTH_LABELS[int(i)],
-                "confidence": float(probs[int(i)]),
-            }
-            for i in top3_indices
-        ]
-        
-        # Load thresholds if available
-        threshold_path = os.path.join(
-            self.config.get_checkpoint_dir(), "best_model", "thresholds.json"
-        )
-        thresholds = ThresholdOptimizer.load_thresholds(threshold_path)
-        
-        result = {
-            "text": text[:200],
-            "primary_condition": MENTAL_HEALTH_LABELS[prediction],
-            "primary_confidence": confidence,
-            "all_scores": {
-                label: float(probs[i])
-                for i, label in enumerate(MENTAL_HEALTH_LABELS)
-            },
-            "top_predictions": top3,
-            "needs_attention": MENTAL_HEALTH_LABELS[prediction] != "Normal" and confidence >= 0.3,
-            "num_labels": len(MENTAL_HEALTH_LABELS),
-            "thresholds": thresholds.tolist() if thresholds is not None else None,
-        }
-        
-        return result
+            logger.info(f"  True={mc['true_label']:25s} -> Pred={mc['predicted_label']:25s}: {mc['count']} ({mc['percentage']:.1f}%)")

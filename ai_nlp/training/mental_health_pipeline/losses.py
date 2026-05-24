@@ -67,8 +67,8 @@ class FocalLoss(nn.Module):
         Returns:
             Scalar loss value
         """
-        # Move alpha to same device as logits (fixes GPU/CPU device mismatch)
-        alpha = self.alpha.to(logits.device) if self.alpha is not None else None
+        # Move alpha to same device AND dtype as logits (handles fp16 vs fp32 mismatch)
+        alpha = self.alpha.to(device=logits.device, dtype=logits.dtype) if self.alpha is not None else None
         
         # Compute cross-entropy first
         ce_loss = F.cross_entropy(
@@ -115,8 +115,9 @@ class PerClassGammaFocalLoss(nn.Module):
         
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         device = logits.device
-        gamma_tensor = self.per_class_gamma.to(device)
-        alpha = self.alpha.to(device) if self.alpha is not None else None
+        dtype = logits.dtype  # Match logits dtype (may be float16 from mixed precision)
+        gamma_tensor = self.per_class_gamma.to(device=device, dtype=dtype)
+        alpha = self.alpha.to(device=device, dtype=dtype) if self.alpha is not None else None
         
         # Standard CE loss
         ce_loss = F.cross_entropy(logits, targets, reduction="none", weight=alpha)
