@@ -22,10 +22,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.models.mental_health_inference import (
-    DETAILED_LABELS,
-    MentalHealthInference,
-    get_mental_health_inference,
+from app.models.mental_health_inference import DETAILED_LABELS
+
 ROOT_DIR = Path(__file__).resolve().parents[3]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
