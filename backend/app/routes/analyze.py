@@ -8,11 +8,20 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-
 from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.models.inference import GoEmotionsInference, get_inference, GOEMOTIONS_28, COARSE_EMOTIONS
 from app.models.mental_health_inference import get_mental_health_inference
+# --- THÊM ĐOẠN NÀY VÀO ĐỂ ĐƯA ĐƯỜNG DẪN HỆ THỐNG LÊN THƯ MỤC GỐC ---
+import sys
+import os
+# Đi từ backend/app/routes/ lên 3 cấp (../../../) để chạm tới thư mục gốc dự án
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+
+# --- BÂY GIỜ CÁC LỆNH IMPORT AI_NLP SẼ HOẠT ĐỘNG HOÀN HẢO ---
+from ai_nlp.emotion_model import COARSE_EMOTIONS
+from ai_nlp.analyzer import analyze_text  # Hàm xử lý chính trong file analyzer.py
+from ai_nlp.training.emotion_pipeline.config import GOEMOTIONS_28
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +99,27 @@ async def analyze_endpoint(request: AnalyzeRequest):
             output_mode=request.output_mode,  # None = auto
         )
         screening = get_mental_health_inference().classify(request.text)
+        # Gọi trực tiếp hàm phân tích văn bản thực tế từ module ai_nlp
+        result = analyze_text(request.text)
         
         processing_time = (time.time() - start) * 1000
         
+        # result trả về là một dictionary chứa thông tin phân tích
+        primary_emotion_val = "neutral"
+        confidence_val = 0.0
+        label_type_val = "fine"
+        language_val = "en"
+        scores_28_val = {}
+        scores_9_val = {}
+
+        if isinstance(result, dict):
+            primary_emotion_val = result.get("primary_emotion", "neutral")
+            confidence_val = result.get("confidence", 0.0)
+            label_type_val = result.get("label_type", "fine")
+            language_val = result.get("language", "en")
+            scores_28_val = result.get("scores_28", {})
+            scores_9_val = result.get("scores_9", {})
+
         return AnalyzeResponse(
             text=request.text[:100] + "..." if len(request.text) > 100 else request.text,
             primary_emotion=result.get("primary_emotion", "neutral"),
@@ -114,9 +141,16 @@ async def analyze_endpoint(request: AnalyzeRequest):
             risk_level=screening.get("risk_level", "none"),
             needs_attention=screening.get("needs_attention", False),
             mental_health_screening=screening,
+            primary_emotion=primary_emotion_val,
+            confidence=confidence_val,
+            label_type=label_type_val,
+            language=language_val,
+            scores_28=scores_28_val,
+            scores_9=scores_9_val,
+            processing_time_ms=processing_time
         )
     except Exception as e:
-        logger.error(f"Analysis failed: {e}", exc_info=True)
+        logger.error(f"Analysis failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
@@ -131,30 +165,30 @@ async def analyze_batch(request: BatchAnalyzeRequest):
     start = time.time()
     
     try:
-        infer = get_inference()
         results = []
-        
         for text in request.texts:
             result = infer.classify(text=text, output_mode=None)
             result["mental_health_screening"] = get_mental_health_inference().classify(text)
+            # Gọi trực tiếp hàm phân tích của ai_nlp cho từng đoạn văn bản
+            result = analyze_text(text)
             results.append(result)
         
         response_results = [
             AnalyzeResponse(
                 text=t[:100] + "..." if len(t) > 100 else t,
-                primary_emotion=r.get("primary_emotion", "neutral"),
-                confidence=r.get("confidence", 0.0),
-                label_type=r.get("label_type", "fine"),
-                language=r.get("language", "en"),
-                scores_28=r.get("scores_28", {}),
-                scores_9=r.get("scores_9", {}),
-                toxicity_score=r.get("toxicity_score", 0.0),
-                toxicity_binary=r.get("toxicity_binary", False),
-                sarcasm_score=r.get("sarcasm_score", 0.0),
-                sarcasm_binary=r.get("sarcasm_binary", False),
-                source=r.get("source", "goemotions_28"),
-                model=r.get("model", "xlm-roberta-base+lora+goemotions28"),
-                num_labels=r.get("num_labels", 28),
+                primary_emotion=r.get("primary_emotion", "neutral") if isinstance(r, dict) else "neutral",
+                confidence=r.get("confidence", 0.0) if isinstance(r, dict) else 0.0,
+                label_type=r.get("label_type", "fine") if isinstance(r, dict) else "fine",
+                language=r.get("language", "en") if isinstance(r, dict) else "en",
+                scores_28=r.get("scores_28", {}) if isinstance(r, dict) else {},
+                scores_9=r.get("scores_9", {}) if isinstance(r, dict) else {},
+                toxicity_score=r.get("toxicity_score", 0.0) if isinstance(r, dict) else 0.0,
+                toxicity_binary=r.get("toxicity_binary", False) if isinstance(r, dict) else False,
+                sarcasm_score=r.get("sarcasm_score", 0.0) if isinstance(r, dict) else 0.0,
+                sarcasm_binary=r.get("sarcasm_binary", False) if isinstance(r, dict) else False,
+                source=r.get("source", "goemotions_28") if isinstance(r, dict) else "goemotions_28",
+                model=r.get("model", "xlm-roberta-base+lora+goemotions28") if isinstance(r, dict) else "xlm-roberta-base+lora+goemotions28",
+                num_labels=r.get("num_labels", 28) if isinstance(r, dict) else 28,
                 processing_time_ms=0.0,
                 diagnosis_code=r["mental_health_screening"].get("diagnosis_code", "normal"),
                 diagnosis_vi=r["mental_health_screening"].get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),

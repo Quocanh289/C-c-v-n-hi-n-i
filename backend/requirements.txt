@@ -3,11 +3,10 @@
 # ====================================================
 
 # Web Framework
-# Python 3.13 requires Pydantic >= 2.10 for published pydantic-core wheels.
-fastapi>=0.115.8,<1.0.0
-uvicorn[standard]>=0.32.0,<1.0.0
-pydantic>=2.10.2,<3.0.0
-pydantic-settings>=2.6.1,<3.0.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.25.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
 
 # AI/ML
 # Python 3.13 Windows wheels are available from torch 2.5+.

@@ -9,7 +9,8 @@
     "activeTab",
     "scripting",
     "tabs",
-    "offscreen"
+    "offscreen",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://*.facebook.com/*",

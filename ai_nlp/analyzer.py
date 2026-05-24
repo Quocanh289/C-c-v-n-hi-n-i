@@ -1,10 +1,13 @@
 # Main analyzer module
+from typing import Dict
+
 from .preprocess import preprocess_text
 from .sentiment_model import classify_sentiment
 from .emotion_model import classify_emotions
 from .symptom_extractor import extract_symptoms
 from .condition_mapper import map_to_conditions
 from .risk_assessor import assess_risk
+
 
 def analyze_text(text: str) -> Dict:
     processed = preprocess_text(text)

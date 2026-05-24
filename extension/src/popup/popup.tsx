@@ -17,28 +17,26 @@ import {
 
 type PopupTab = 'en' | 'vi' | 'mh';
 
-const modeToTab = (mode: DetectionMode): PopupTab => {
-  if (mode === 'mental_health_en') return 'mh';
-  if (mode === 'emotion_vi') return 'vi';
-  return 'en';
-};
-
-const tabToMode = (tab: PopupTab): DetectionMode => {
-  if (tab === 'mh') return 'mental_health_en';
-  if (tab === 'vi') return 'emotion_vi';
-  return 'emotion_en';
-};
-
-const Popup: React.FC = () => {
+export default function Popup() {
+  // --- Tất cả State đưa về chung 1 nơi ---
+  const [userId, setUserId] = useState<string | null>(null);
   const [tab, setTab] = useState<PopupTab>('en');
   const [stats, setStats] = useState<ExtensionStats | null>(null);
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadStats();
-    loadSettings();
-  }, []);
+  // --- Các hàm hỗ trợ ---
+  const modeToTab = (mode: DetectionMode): PopupTab => {
+    if (mode === 'mental_health_en') return 'mh';
+    if (mode === 'emotion_vi') return 'vi';
+    return 'en';
+  };
+
+  const tabToMode = (tab: PopupTab): DetectionMode => {
+    if (tab === 'mh') return 'mental_health_en';
+    if (tab === 'vi') return 'emotion_vi';
+    return 'emotion_en';
+  };
 
   const loadStats = async () => {
     try {
@@ -70,6 +68,28 @@ const Popup: React.FC = () => {
     await chrome.runtime.sendMessage({ type: 'UPDATE_SETTINGS', payload: updated });
   };
 
+  const handleOpenDashboard = () => {
+    if (userId) {
+      const url = `http://localhost:3000/dashboard?uid=${userId}`;
+      chrome.tabs.create({ url }); // Mở tab mới
+    }
+  };
+
+  // --- Hợp nhất useEffect khởi tạo ---
+  useEffect(() => {
+    // 1. Đọc userId từ storage
+    chrome.storage.local.get(['userId'], (result) => {
+      if (result.userId) {
+        setUserId(result.userId);
+      }
+    });
+
+    // 2. Tải thông số cấu hình và thống kê
+    loadStats();
+    loadSettings();
+  }, []);
+
+  // --- Giao diện hiển thị ---
   return (
     <div className="popup-container">
       <div className="popup-header">
@@ -78,6 +98,19 @@ const Popup: React.FC = () => {
           <h1>Emotion Lens</h1>
         </div>
         <span className="version-badge">v2.1</span>
+      </div>
+
+      {/* Khu vực hiển thị nút xem Dashboard */}
+      <div className="p-4 w-64 border-b border-gray-700">
+        <h1 className="font-bold text-lg mb-2">My Emotion Lens</h1>
+        <p className="text-xs text-gray-400 mb-3">Your ID: {userId || 'Loading...'}</p>
+        <button
+          onClick={handleOpenDashboard}
+          disabled={!userId}
+          className="w-full bg-blue-600 text-white text-sm px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+        >
+          View Analytics Dashboard
+        </button>
       </div>
 
       {!loading && stats && stats.totalAnalyzed > 0 && (
@@ -192,9 +225,12 @@ const Popup: React.FC = () => {
       </div>
     </div>
   );
-};
+}
 
-const root = document.createElement('div');
-root.id = 'root';
-document.body.appendChild(root);
-createRoot(root).render(<Popup />);
+// --- Phần render ra DOM được đưa ra ngoài cùng của file (Global Scope) ---
+const rootElement = document.getElementById('root') || document.createElement('div');
+if (!rootElement.id) {
+  rootElement.id = 'root';
+  document.body.appendChild(rootElement);
+}
+createRoot(rootElement).render(<Popup />);

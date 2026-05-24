@@ -197,3 +197,19 @@ CREATE TRIGGER update_user_settings_updated_at
     BEFORE UPDATE ON user_settings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+-- database/init.sql (Thêm vào cuối file)
+
+-- Bảng lưu lịch sử text người dùng bôi đen từ Extension
+CREATE TABLE IF NOT EXISTS user_saved_texts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL,
+    source_text TEXT NOT NULL,
+    source_url TEXT,
+    predicted_issue VARCHAR(128),  -- Dự đoán vấn đề tâm lý (Stress, Trầm cảm, v.v.)
+    confidence FLOAT DEFAULT 0.0,  -- Độ tin cậy của AI
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tạo Index để tối ưu truy vấn khi Dashboard của Next.js gọi vào
+CREATE INDEX idx_user_saved_texts_user_id ON user_saved_texts(user_id);
+CREATE INDEX idx_user_saved_texts_created_at ON user_saved_texts(created_at DESC);
