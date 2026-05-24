@@ -22,7 +22,7 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_DB=emotionlens
       - POSTGRES_USER=emotionlens
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - CELERY_BROKER_URL=redis://redis:6379/0

@@ -254,6 +254,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // Extension Lifecycle
 // ====================================================
 
+
+
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     // Set default settings on first install
@@ -272,6 +274,58 @@ chrome.runtime.onInstalled.addListener((details) => {
     console.log('[EmotionLens] Extension updated');
   }
 });
+// extension/src/background/background.ts
 
+// 1. Chạy logic khởi tạo khi tiện ích vừa được cài đặt hoặc cập nhật
+chrome.runtime.onInstalled.addListener(async () => {
+  // Sinh mã định danh ẩn danh (UUID) nếu chưa có
+  const storage = await chrome.storage.local.get(['userId']);
+  if (!storage.userId) {
+    const uuid = crypto.randomUUID(); // Hàm có sẵn của trình duyệt sinh UUID an toàn
+    await chrome.storage.local.set({ userId: uuid });
+    console.log("Đã khởi tạo UUID cho người dùng mới:", uuid);
+  }
+
+  // Khởi tạo Context Menu
+  chrome.contextMenus.create({
+    id: "save-to-emotion-lens",
+    title: "Save to Emotion Lens",
+    contexts: ["selection"] // XÁC ĐỊNH: Chỉ hiện khi người dùng quét bôi đen văn bản
+  });
+});
+
+// 2. Xử lý sự kiện khi Context Menu được click
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "save-to-emotion-lens" && info.selectionText) {
+    
+    // Lấy UUID ẩn danh từ Storage
+    const storage = await chrome.storage.local.get('userId');
+    const userId = storage.userId;
+
+    try {
+      // Gửi POST request có chứa UID và đoạn văn bản tới server Backend
+      const response = await fetch("http://localhost:8000/api/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          uid: userId,
+          text: info.selectionText,
+          sourceUrl: tab?.url || ""
+        })
+      });
+
+      if (response.ok) {
+        console.log("Đã lưu chuỗi văn bản thành công về server!");
+        // Có thể bổ sung tính năng tạo thông báo notification trên màn hình ở đây
+      } else {
+        console.error("Lỗi khi lưu dữ liệu về Backend:", response.status);
+      }
+    } catch (error) {
+      console.error("Lỗi rớt mạng hoặc hệ thống:", error);
+    }
+  }
+});
 // Initialize
 initialize();

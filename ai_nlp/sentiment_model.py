@@ -1,5 +1,5 @@
 # Sentiment classification module
-def classify_sentiment(tokens: List[str]) -> str:
+def classify_sentiment(tokens: list[str]) -> str:
     # Placeholder logic
     negative_words = ["mệt", "buồn", "không muốn", "vô dụng"]
     if any(word in tokens for word in negative_words):

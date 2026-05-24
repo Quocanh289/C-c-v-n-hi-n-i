@@ -1,5 +1,5 @@
 # Symptom extraction module
-def extract_symptoms(tokens: List[str]) -> List[str]:
+def extract_symptoms(tokens: list[str]) -> list[str]:
     # Placeholder logic
     symptoms = []
     symptom_keywords = {

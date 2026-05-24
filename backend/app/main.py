@@ -5,8 +5,8 @@
 # Qdrant vector storage, and Celery task queue
 # ====================================================
 
-import os
 import logging
+
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.routes import analyze, learning, slang, health, mental_health
-from app.models.inference import GoEmotionsInference, get_inference
+from app.routes.dashboard import router as dashboard_router
 
 # Configure logging
 logging.basicConfig(
@@ -24,27 +24,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global inference instance (lazy-loaded via get_inference)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application lifecycle: pre-load model on startup."""
-    global _inference_instance
-    
     # Startup
     logger.info("Starting Emotion Lens Backend...")
-    
-    # Pre-load the GoEmotions 28-label model on startup
-    try:
-        infer = get_inference()
-        if infer.is_loaded:
-            logger.info("GoEmotions 28-label model loaded successfully on startup")
-        else:
-            logger.warning("GoEmotions model not available on startup (will load on first request)")
-    except Exception as e:
-        logger.warning(f"Could not pre-load model on startup: {e}")
-        logger.info("Model will be loaded on first request")
     
     yield
     
@@ -60,6 +45,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.include_router(dashboard_router)
+
+# Compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS middleware - allow extension to connect
 app.add_middleware(
@@ -73,9 +62,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Compression middleware
-app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Include routers
 app.include_router(health.router, prefix="/api", tags=["health"])
