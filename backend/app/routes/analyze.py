@@ -1,4 +1,47 @@
-# (Phần định nghĩa AnalyzeResponse - không trùng keyword và giữ các trường cần thiết)
+# ====================================================
+# Analysis Routes - Core Emotion Detection API
+# Uses the trained 28-label GoEmotions model
+# 28 fine-grained for English, 9 coarse for Vietnamese
+# ====================================================
+
+import logging
+import time
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Depends, Request
+
+from app.models.inference import GoEmotionsInference, get_inference, GOEMOTIONS_28, COARSE_EMOTIONS
+from app.models.mental_health_inference import get_mental_health_inference
+
+# Thêm đường dẫn hệ thống lên thư mục gốc
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+
+from ai_nlp.emotion_model import COARSE_EMOTIONS
+from ai_nlp.analyzer import analyze_text  
+from ai_nlp.training.emotion_pipeline.config import GOEMOTIONS_28
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/analyze", tags=["analysis"])
+
+
+# ====================================================
+# Pydantic Models (Khai báo lại các Request Model bị thiếu)
+# ====================================================
+
+class AnalyzeRequest(BaseModel):
+    """Request model for emotion analysis."""
+    text: str = Field(..., min_length=1, max_length=2000, description="Text to analyze")
+    return_all_probs: bool = Field(True, description="Return probabilities for all emotions")
+    output_mode: Optional[str] = Field(None, description="'fine' (28), 'coarse' (9), or 'auto' (28 EN, 9 VI)")
+
+
+class BatchAnalyzeRequest(BaseModel):
+    """Request model for batch analysis."""
+    texts: List[str] = Field(..., min_length=1, max_length=100, description="List of texts to analyze")
+    return_all_probs: bool = Field(True, description="Return probabilities for all emotions")# (Phần định nghĩa AnalyzeResponse - không trùng keyword và giữ các trường cần thiết)
 class AnalyzeResponse(BaseModel):
     """Response model for emotion analysis."""
     text: str
@@ -66,6 +109,10 @@ async def analyze_endpoint(request: AnalyzeRequest):
 
 
 # (Phần analyze_batch: nhập infer qua get_inference(), gộp thay đổi incoming, tránh biến/keyword không định nghĩa)
+class BatchAnalyzeResponse(BaseModel):
+    """Response model for batch analysis."""
+    results: List[AnalyzeResponse]
+    total_processing_time_ms: float = 0.0
 @router.post("/batch", response_model=BatchAnalyzeResponse)
 async def analyze_batch(request: BatchAnalyzeRequest):
     start = time.time()
