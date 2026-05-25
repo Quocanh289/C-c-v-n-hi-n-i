@@ -120,34 +120,28 @@ async def analyze_endpoint(request: AnalyzeRequest):
             scores_28_val = result.get("scores_28", {})
             scores_9_val = result.get("scores_9", {})
 
+        # Thay thế toàn bộ khối return cũ bằng khối lệnh này:
         return AnalyzeResponse(
             text=request.text[:100] + "..." if len(request.text) > 100 else request.text,
-            primary_emotion=result.get("primary_emotion", "neutral"),
-            confidence=result.get("confidence", 0.0),
-            label_type=result.get("label_type", "fine"),
-            language=result.get("language", "en"),
-            scores_28=result.get("scores_28", {}),
-            scores_9=result.get("scores_9", {}),
-            toxicity_score=result.get("toxicity_score", 0.0),
-            toxicity_binary=result.get("toxicity_binary", False),
-            sarcasm_score=result.get("sarcasm_score", 0.0),
-            sarcasm_binary=result.get("sarcasm_binary", False),
-            source=result.get("source", "goemotions_28"),
-            model=result.get("model", "xlm-roberta-base+lora+goemotions28"),
-            num_labels=result.get("num_labels", 28),
-            processing_time_ms=processing_time,
-            diagnosis_code=screening.get("diagnosis_code", "normal"),
-            diagnosis_vi=screening.get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),
-            risk_level=screening.get("risk_level", "none"),
-            needs_attention=screening.get("needs_attention", False),
-            mental_health_screening=screening,
             primary_emotion=primary_emotion_val,
             confidence=confidence_val,
             label_type=label_type_val,
             language=language_val,
             scores_28=scores_28_val,
             scores_9=scores_9_val,
-            processing_time_ms=processing_time
+            toxicity_score=result.get("toxicity_score", 0.0) if isinstance(result, dict) else 0.0,
+            toxicity_binary=result.get("toxicity_binary", False) if isinstance(result, dict) else False,
+            sarcasm_score=result.get("sarcasm_score", 0.0) if isinstance(result, dict) else 0.0,
+            sarcasm_binary=result.get("sarcasm_binary", False) if isinstance(result, dict) else False,
+            source=result.get("source", "goemotions_28") if isinstance(result, dict) else "goemotions_28",
+            model=result.get("model", "xlm-roberta-base+lora+goemotions28") if isinstance(result, dict) else "xlm-roberta-base+lora+goemotions28",
+            num_labels=result.get("num_labels", 28) if isinstance(result, dict) else 28,
+            processing_time_ms=processing_time,
+            diagnosis_code=screening.get("diagnosis_code", "normal"),
+            diagnosis_vi=screening.get("diagnosis_vi", "Không có dấu hiệu rõ ràng"),
+            risk_level=screening.get("risk_level", "none"),
+            needs_attention=screening.get("needs_attention", False),
+            mental_health_screening=screening
         )
     except Exception as e:
         logger.error(f"Analysis failed: {str(e)}", exc_info=True)
