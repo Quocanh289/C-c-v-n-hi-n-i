@@ -1,0 +1,287 @@
+{
+  "accuracy": 0.7647663071391885,
+  "macro_f1": 0.7186277629701036,
+  "macro_precision": 0.7198512449286193,
+  "macro_recall": 0.7352872116121508,
+  "weighted_f1": 0.7610690926215224,
+  "weighted_precision": 0.7695288284551107,
+  "weighted_recall": 0.7647663071391885,
+  "mcc": 0.7182478191263897,
+  "per_class": {
+    "Normal": {
+      "precision": 0.9781659388646288,
+      "recall": 0.9803063457330415,
+      "f1": 0.9792349726775956,
+      "support": 457
+    },
+    "Depression": {
+      "precision": 0.6177777777777778,
+      "recall": 0.4894366197183099,
+      "f1": 0.5461689587426326,
+      "support": 284
+    },
+    "Anxiety": {
+      "precision": 0.6818181818181818,
+      "recall": 0.487012987012987,
+      "f1": 0.5681818181818182,
+      "support": 154
+    },
+    "Bipolar": {
+      "precision": 0.5813008130081301,
+      "recall": 0.8265895953757225,
+      "f1": 0.6825775656324582,
+      "support": 173
+    },
+    "Stress": {
+      "precision": 0.6736401673640168,
+      "recall": 0.8994413407821229,
+      "f1": 0.7703349282296651,
+      "support": 179
+    },
+    "Suicidal": {
+      "precision": 0.8300653594771242,
+      "recall": 0.7681451612903226,
+      "f1": 0.7979057591623037,
+      "support": 496
+    },
+    "Personality_disorder": {
+      "precision": 0.6761904761904762,
+      "recall": 0.696078431372549,
+      "f1": 0.6859903381642513,
+      "support": 204
+    }
+  },
+  "class_support": {
+    "Normal": 457,
+    "Depression": 284,
+    "Anxiety": 154,
+    "Bipolar": 173,
+    "Stress": 179,
+    "Suicidal": 496,
+    "Personality_disorder": 204
+  },
+  "hardest_classes": [
+    {
+      "label": "Depression",
+      "f1": 0.5461689587426326,
+      "support": 284
+    },
+    {
+      "label": "Anxiety",
+      "f1": 0.5681818181818182,
+      "support": 154
+    },
+    {
+      "label": "Bipolar",
+      "f1": 0.6825775656324582,
+      "support": 173
+    },
+    {
+      "label": "Personality_disorder",
+      "f1": 0.6859903381642513,
+      "support": 204
+    },
+    {
+      "label": "Stress",
+      "f1": 0.7703349282296651,
+      "support": 179
+    },
+    {
+      "label": "Suicidal",
+      "f1": 0.7979057591623037,
+      "support": 496
+    },
+    {
+      "label": "Normal",
+      "f1": 0.9792349726775956,
+      "support": 457
+    }
+  ],
+  "misclassifications": [
+    {
+      "true_label": "Depression",
+      "predicted_label": "Suicidal",
+      "count": 56,
+      "percentage": 19.7
+    },
+    {
+      "true_label": "Depression",
+      "predicted_label": "Bipolar",
+      "count": 46,
+      "percentage": 16.2
+    },
+    {
+      "true_label": "Suicidal",
+      "predicted_label": "Stress",
+      "count": 38,
+      "percentage": 7.7
+    },
+    {
+      "true_label": "Suicidal",
+      "predicted_label": "Depression",
+      "count": 30,
+      "percentage": 6.0
+    },
+    {
+      "true_label": "Suicidal",
+      "predicted_label": "Personality_disorder",
+      "count": 28,
+      "percentage": 5.6
+    },
+    {
+      "true_label": "Personality_disorder",
+      "predicted_label": "Depression",
+      "count": 23,
+      "percentage": 11.3
+    },
+    {
+      "true_label": "Anxiety",
+      "predicted_label": "Depression",
+      "count": 20,
+      "percentage": 13.0
+    },
+    {
+      "true_label": "Anxiety",
+      "predicted_label": "Bipolar",
+      "count": 20,
+      "percentage": 13.0
+    },
+    {
+      "true_label": "Depression",
+      "predicted_label": "Anxiety",
+      "count": 18,
+      "percentage": 6.3
+    },
+    {
+      "true_label": "Anxiety",
+      "predicted_label": "Personality_disorder",
+      "count": 17,
+      "percentage": 11.0
+    }
+  ],
+  "confusion_matrix": [
+    [
+      448,
+      0,
+      1,
+      6,
+      2,
+      0,
+      0
+    ],
+    [
+      2,
+      139,
+      18,
+      46,
+      13,
+      56,
+      10
+    ],
+    [
+      5,
+      20,
+      75,
+      20,
+      11,
+      6,
+      17
+    ],
+    [
+      1,
+      11,
+      4,
+      143,
+      4,
+      3,
+      7
+    ],
+    [
+      1,
+      2,
+      1,
+      2,
+      161,
+      6,
+      6
+    ],
+    [
+      0,
+      30,
+      5,
+      14,
+      38,
+      381,
+      28
+    ],
+    [
+      1,
+      23,
+      6,
+      15,
+      10,
+      7,
+      142
+    ]
+  ],
+  "classification_report": {
+    "Normal": {
+      "precision": 0.9781659388646288,
+      "recall": 0.9803063457330415,
+      "f1-score": 0.9792349726775956,
+      "support": 457.0
+    },
+    "Depression": {
+      "precision": 0.6177777777777778,
+      "recall": 0.4894366197183099,
+      "f1-score": 0.5461689587426326,
+      "support": 284.0
+    },
+    "Anxiety": {
+      "precision": 0.6818181818181818,
+      "recall": 0.487012987012987,
+      "f1-score": 0.5681818181818182,
+      "support": 154.0
+    },
+    "Bipolar": {
+      "precision": 0.5813008130081301,
+      "recall": 0.8265895953757225,
+      "f1-score": 0.6825775656324582,
+      "support": 173.0
+    },
+    "Stress": {
+      "precision": 0.6736401673640168,
+      "recall": 0.8994413407821229,
+      "f1-score": 0.7703349282296651,
+      "support": 179.0
+    },
+    "Suicidal": {
+      "precision": 0.8300653594771242,
+      "recall": 0.7681451612903226,
+      "f1-score": 0.7979057591623037,
+      "support": 496.0
+    },
+    "Personality_disorder": {
+      "precision": 0.6761904761904762,
+      "recall": 0.696078431372549,
+      "f1-score": 0.6859903381642513,
+      "support": 204.0
+    },
+    "accuracy": 0.7647663071391885,
+    "macro avg": {
+      "precision": 0.7198512449286193,
+      "recall": 0.7352872116121508,
+      "f1-score": 0.7186277629701036,
+      "support": 1947.0
+    },
+    "weighted avg": {
+      "precision": 0.7695288284551107,
+      "recall": 0.7647663071391885,
+      "f1-score": 0.7610690926215224,
+      "support": 1947.0
+    }
+  },
+  "num_samples": 1947,
+  "roc_auc_macro": 0.9419015277085858,
+  "avg_loss": 0.38840071124131564
+}

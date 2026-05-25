@@ -245,38 +245,43 @@ export class EmotionClassifier {
 
   /**
    * Analyze text and return emotion classification result.
-   * Uses 28 fine-grained labels for English, 9 coarse for Vietnamese.
+   * Uses 28 fine-grained labels for English (auto-translates VI→EN).
    */
   async analyze(text: string, settings: ExtensionSettings): Promise<EmotionResult> {
     const startTime = performance.now();
     const language = detectLanguage(text);
     const isEnglish = language === 'en';
+    
+    // Auto-translate Vietnamese to English for unified 28-label analysis
+    let analyzeText = text;
+    let originalLanguage = language;
+    if (language === 'vi' || language === 'mixed') {
+      originalLanguage = 'vi';
+      const translated = await this.translateViToEn(text, settings);
+      if (translated) {
+        analyzeText = translated;
+        console.log(`[EmotionLens] VI→EN translated for emotion: "${text.slice(0,40)}..." → "${analyzeText.slice(0,40)}..."`);
+      }
+    }
 
     // Stage 1: Fast rule-based analysis (always produces 9 extension scores)
-    const ruleBasedResult = this.ruleBasedAnalysis(text);
+    const ruleBasedResult = this.ruleBasedAnalysis(analyzeText);
 
-    // Stage 2: 28-label rule-based analysis for English
-    let scores28: Emotion28Scores | undefined;
-    let scores9: Emotion9Scores | undefined;
-    if (isEnglish) {
-      scores28 = this.ruleBased28Analysis(text);
-    } else {
-      scores9 = this.ruleBased9Analysis(text);
-    }
+    // Stage 2: 28-label analysis for ALL text (VI text is now translated)
+    const scores28 = this.ruleBased28Analysis(analyzeText);
 
     // Stage 3: Ensemble scoring
     const finalResult: EmotionResult = {
       analysisType: 'emotion',
-      primaryEmotion: this.getPrimaryEmotion(ruleBasedResult, text, settings),
+      primaryEmotion: this.getPrimaryEmotion(ruleBasedResult, analyzeText, settings),
       scores: ruleBasedResult,
       scores28: scores28,
-      scores9: scores9,
-      labelType: isEnglish ? 'fine' : 'coarse',
-      numLabels: isEnglish ? 28 : 9,
+      labelType: 'fine',
+      numLabels: 28,
       confidence: Math.max(...Object.values(ruleBasedResult)),
       toxicityScore: ruleBasedResult[EmotionCategory.Toxic],
       sarcasmScore: ruleBasedResult[EmotionCategory.Sarcastic],
-      language: language,
+      language: originalLanguage,
       source: 'local',
       inferenceTimeMs: performance.now() - startTime,
     };
@@ -285,17 +290,126 @@ export class EmotionClassifier {
   }
 
   /**
-   * Analyze English text with the backend DeBERTa-v3 + LoRA mental-health model.
-   * The trained adapter is loaded by the backend from the best_model checkpoint.
+   * Translate Vietnamese text to English using the backend translate endpoint.
    */
-  async analyzeMentalHealth(text: string, settings: ExtensionSettings): Promise<EmotionResult> {
+  private async translateViToEn(text: string, settings: ExtensionSettings): Promise<string | null> {
+    try {
+      const backendApiUrl = settings.backendApiUrl || 'http://localhost:8001';
+      const baseUrl = backendApiUrl.replace(/\/+$/, '');
+      
+      // Try backend translate endpoint first
+      const response = await fetch(`${baseUrl}/api/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, source_lang: 'vi', target_lang: 'en' }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.translated_text || null;
+      }
+    } catch {
+      // Fallback: use simple dictionary-based translation for common Vietnamese phrases
+      return this.fallbackTranslate(text);
+    }
+    return null;
+  }
+
+  /**
+   * Simple fallback translation for common Vietnamese mental health phrases.
+   */
+  private fallbackTranslate(text: string): string {
+    const viToEnPhrases: Record<string, string> = {
+      'tôi buồn': 'i feel sad',
+      'tôi rất buồn': 'i am very sad',
+      'buồn quá': 'so sad',
+      'chán nản': 'feel hopeless',
+      'chán quá': 'so boring',
+      'mệt mỏi': 'tired and exhausted',
+      'áp lực': 'under pressure',
+      'căng thẳng': 'stressed',
+      'lo lắng': 'worried and anxious',
+      'sợ hãi': 'scared and fearful',
+      'hoảng sợ': 'panic and scared',
+      'tuyệt vọng': 'hopeless and desperate',
+      'vô dụng': 'feel worthless',
+      'vô vọng': 'hopeless',
+      'không muốn sống': 'dont want to live',
+      'muốn chết': 'want to die',
+      'tự tử': 'suicide',
+      'tự sát': 'kill myself',
+      'đau khổ': 'suffering and in pain',
+      'cô đơn': 'lonely and alone',
+      'mất ngủ': 'cant sleep insomnia',
+      'không ngủ được': 'cant sleep',
+      'mất hứng thú': 'lost interest in everything',
+      'không còn hứng thú': 'no longer interested',
+      'không tập trung': 'cannot focus',
+      'bồn chồn': 'restless and anxious',
+      'khó thở': 'difficulty breathing',
+      'tim đập nhanh': 'heart racing fast',
+      'hoảng loạn': 'panic attack',
+      'dao động cảm xúc': 'mood swings',
+      'vui': 'happy',
+      'hạnh phúc': 'happy and joyful',
+      'tuyệt vời': 'amazing and wonderful',
+      'yêu đời': 'love life',
+      'bình thường': 'normal and fine',
+    };
+    
+    let translated = text.toLowerCase();
+    let matched = false;
+    for (const [vi, en] of Object.entries(viToEnPhrases)) {
+      if (translated.includes(vi)) {
+        translated = translated.replace(new RegExp(vi, 'g'), en);
+        matched = true;
+      }
+    }
+    
+    if (!matched) {
+      // Simple word-by-word fallback for unknown phrases
+      const wordMap: Record<string, string> = {
+        'tôi': 'i', 'bạn': 'you', 'nó': 'it', 'chúng': 'we',
+        'và': 'and', 'nhưng': 'but', 'hoặc': 'or', 'của': 'of',
+        'là': 'is', 'có': 'have', 'không': 'not no', 'rất': 'very',
+        'quá': 'too so', 'đang': 'am is are', 'sẽ': 'will',
+        'đã': 'have has', 'em': 'i you', 'anh': 'i you',
+        'chị': 'i you', 'thấy': 'feel', 'cảm thấy': 'feel',
+        'ngày': 'day', 'hôm nay': 'today', 'hôm qua': 'yesterday',
+        'mọi': 'every', 'thứ': 'thing', 'người': 'person people',
+        'thời gian': 'time', 'cuộc sống': 'life',
+        'việc': 'work thing', 'học': 'study learn',
+        'làm': 'do make work', 'nghĩ': 'think',
+        'biết': 'know', 'hiểu': 'understand',
+        'muốn': 'want', 'cần': 'need',
+      };
+      translated = translated.split(/\s+/).map(w => wordMap[w] || w).join(' ');
+    }
+    
+    return translated;
+  }
+
+  /**
+   * Analyze text for mental health condition.
+   * Auto-translates Vietnamese text to English before using the mental health model.
+   */
+  async analyzeMentalHealth(text: string, settings: ExtensionSettings, forceEnglish?: boolean): Promise<EmotionResult> {
     const startTime = performance.now();
     const language = detectLanguage(text);
-    if (language !== 'en') {
-      return this.emptyMentalHealthResult('Normal', 0, language, performance.now() - startTime);
+    let analyzeText = text;
+    let originalLanguage = language;
+    
+    // Auto-translate Vietnamese to English for mental health analysis
+    if (language === 'vi' || language === 'mixed') {
+      originalLanguage = 'vi';
+      const translated = await this.translateViToEn(text, settings);
+      if (translated) {
+        analyzeText = translated;
+        console.log(`[EmotionLens] Translated VI→EN: "${text.slice(0,60)}..." → "${analyzeText.slice(0,60)}..."`);
+      }
     }
 
-    const data = await this.requestMentalHealthAnalysis(text, settings) as {
+    const data = await this.requestMentalHealthAnalysis(analyzeText, settings) as {
       primary_condition?: string;
       primary_confidence?: number;
       all_scores?: Record<string, number>;
@@ -320,7 +434,7 @@ export class EmotionClassifier {
       confidence: data.primary_confidence ?? scores[label] ?? 0,
       toxicityScore: 0,
       sarcasmScore: 0,
-      language,
+      language: originalLanguage,
       source: 'backend',
       inferenceTimeMs: performance.now() - startTime,
       severityLevel: data.severity_level,

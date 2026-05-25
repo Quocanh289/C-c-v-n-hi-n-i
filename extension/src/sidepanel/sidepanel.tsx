@@ -13,16 +13,18 @@ import {
   MENTAL_HEALTH_VISUALS,
 } from '../types/emotion';
 
-type PanelTab = 'en' | 'vi' | 'mh';
+type PanelTab = 'en' | 'vi' | 'mh' | 'mh_vi';
 
 const modeToTab = (mode: DetectionMode): PanelTab => {
   if (mode === 'mental_health_en') return 'mh';
+  if (mode === 'mental_health_vi') return 'mh_vi';
   if (mode === 'emotion_vi') return 'vi';
   return 'en';
 };
 
 const tabToMode = (tab: PanelTab): DetectionMode => {
   if (tab === 'mh') return 'mental_health_en';
+  if (tab === 'mh_vi') return 'mental_health_vi';
   if (tab === 'vi') return 'emotion_vi';
   return 'emotion_en';
 };

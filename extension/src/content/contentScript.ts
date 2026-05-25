@@ -341,7 +341,9 @@ async function processAnalysisQueue(): Promise<void> {
           if (processedTexts.has(text)) continue;
           if (!emotionClassifier.hasContent(text)) continue;
           
-          const result = settings.activeMode === 'mental_health_en'
+          // Check if mode is mental health (English or Vietnamese)
+          const isMentalHealthMode = settings.activeMode === 'mental_health_en' || settings.activeMode === 'mental_health_vi';
+          const result = isMentalHealthMode
             ? await emotionClassifier.analyzeMentalHealth(text, settings)
             : await emotionClassifier.analyze(text, settings);
           debugCounters.analyzed++;
@@ -493,12 +495,13 @@ function getTopEmotion28(scores28: Record<string, number>): string | null {
 }
 
 function isResultForActiveMode(result: EmotionResult): boolean {
-  if (settings.activeMode === 'mental_health_en') {
-    return result.analysisType === 'mental_health' && result.language === 'en';
+  if (settings.activeMode === 'mental_health_en' || settings.activeMode === 'mental_health_vi') {
+    return result.analysisType === 'mental_health';
   }
   if (settings.activeMode === 'emotion_en') {
     return result.analysisType !== 'mental_health' && result.language === 'en';
   }
+  // emotion_vi - accept vietnamese or mixed language, non-mental-health results
   return result.analysisType !== 'mental_health' && (result.language === 'vi' || result.language === 'mixed');
 }
 
