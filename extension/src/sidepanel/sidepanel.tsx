@@ -9,7 +9,6 @@ import {
   DetectionMode,
   ExtensionSettings,
   GOEMOTIONS_28_VISUALS,
-  COARSE_EMOTIONS_VISUALS,
   MENTAL_HEALTH_VISUALS,
 } from '../types/emotion';
 
@@ -73,10 +72,11 @@ const SidePanel: React.FC = () => {
         Only one mode scans at a time. Text is taken from posts and comments.
       </p>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
         {tabButton('en', 'EN Emotion', '#4f46e5')}
         {tabButton('vi', 'VI Emotion', '#ea580c')}
         {tabButton('mh', 'EN Mental', '#7c3aed')}
+        {tabButton('mh_vi', 'VI Mental', '#db2777')}
       </div>
 
       {tab === 'en' && (
@@ -91,19 +91,27 @@ const SidePanel: React.FC = () => {
       )}
 
       {tab === 'vi' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-          {Object.entries(COARSE_EMOTIONS_VISUALS).map(([key, visual]) => (
-            <div key={key} style={{ background: 'white', borderRadius: 8, padding: '12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{visual.label}</div>
-            </div>
-          ))}
+        <div>
+          <p style={{ fontSize: 11, color: '#ea580c', marginBottom: 8, lineHeight: 1.4 }}>
+            VI text is auto-translated to EN → then analyzed with 28-label model.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+            {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
+              <div key={key} style={{ background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>{visual.label}</div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{visual.group}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {tab === 'mh' && (
+      {(tab === 'mh' || tab === 'mh_vi') && (
         <div>
-          <p style={{ fontSize: 11, color: '#7c3aed', marginBottom: 8, lineHeight: 1.4 }}>
-            Uses the backend mental-health endpoint with DeBERTa-v3 + LoRA from best_model.
+          <p style={{ fontSize: 11, color: tab === 'mh' ? '#7c3aed' : '#db2777', marginBottom: 8, lineHeight: 1.4 }}>
+            {tab === 'mh' 
+              ? 'Uses backend DeBERTa-v3 + LoRA best_model checkpoint.' 
+              : 'VI text is auto-translated to EN → DeBERTa-v3 + LoRA mental health model.'}
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             {Object.entries(MENTAL_HEALTH_VISUALS).map(([key, visual]) => (
@@ -117,7 +125,7 @@ const SidePanel: React.FC = () => {
       )}
 
       <div style={{ marginTop: 16, padding: '12px 0', borderTop: '1px solid #e5e7eb', fontSize: 10, color: '#6b7280', textAlign: 'center' }}>
-        Active mode: {tab === 'mh' ? 'English Mental Health' : tab === 'vi' ? 'Vietnamese Emotion' : 'English Emotion'}
+        Active mode: {tab === 'en' ? 'English Emotion (28-label)' : tab === 'vi' ? 'Vietnamese Emotion (Vi→En→28)' : tab === 'mh' ? 'English Mental Health' : 'Vietnamese Mental Health (Vi→En)'}
       </div>
     </div>
   );

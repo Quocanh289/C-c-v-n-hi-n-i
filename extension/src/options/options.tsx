@@ -9,14 +9,14 @@ import {
   DEFAULT_SETTINGS,
   DetectionMode,
   GOEMOTIONS_28_VISUALS,
-  COARSE_EMOTIONS_VISUALS,
   MENTAL_HEALTH_VISUALS,
 } from '../types/emotion';
 
-type OptionsTab = 'en' | 'vi' | 'mh';
+type OptionsTab = 'en' | 'vi' | 'mh' | 'mh_vi';
 
 const modeToTab = (mode: DetectionMode): OptionsTab => {
   if (mode === 'mental_health_en') return 'mh';
+  if (mode === 'mental_health_vi') return 'mh_vi';
   if (mode === 'emotion_vi') return 'vi';
   return 'en';
 };
@@ -72,9 +72,17 @@ const Options: React.FC = () => {
       </header>
 
       <div className="model-banner">
-        <strong>Active scan mode:</strong> {settings.activeMode === 'mental_health_en' ? 'English mental health' : settings.activeMode === 'emotion_vi' ? 'Vietnamese emotion' : 'English emotion'}
+        <strong>Active scan mode:</strong> {
+          settings.activeMode === 'mental_health_en'
+            ? 'English mental health'
+            : settings.activeMode === 'mental_health_vi'
+              ? 'Vietnamese mental health'
+              : settings.activeMode === 'emotion_vi'
+                ? 'Vietnamese emotion'
+                : 'English emotion'
+        }
         <br />
-        English mental health uses the backend DeBERTa-v3 + LoRA best_model checkpoint.
+        Vietnamese modes translate VI to EN before detection. Mental health uses backend DeBERTa-v3 + LoRA best_model.
       </div>
 
       <section className="options-section">
@@ -83,6 +91,7 @@ const Options: React.FC = () => {
           {modeButton('emotion_en', 'English Emotion')}
           {modeButton('emotion_vi', 'Vietnamese Emotion')}
           {modeButton('mental_health_en', 'English Mental Health')}
+          {modeButton('mental_health_vi', 'Vietnamese Mental Health')}
         </div>
       </section>
 
@@ -131,8 +140,9 @@ const Options: React.FC = () => {
         <h2>Labels</h2>
         <div className="tab-bar">
           <button className={`tab-btn ${tab === 'en' ? 'active' : ''}`} onClick={() => setTab('en')}>English 28</button>
-          <button className={`tab-btn ${tab === 'vi' ? 'active' : ''}`} onClick={() => setTab('vi')}>Vietnamese 9</button>
-          <button className={`tab-btn ${tab === 'mh' ? 'active' : ''}`} onClick={() => setTab('mh')}>Mental Health 7</button>
+          <button className={`tab-btn ${tab === 'vi' ? 'active' : ''}`} onClick={() => setTab('vi')}>VI to EN 28</button>
+          <button className={`tab-btn ${tab === 'mh' ? 'active' : ''}`} onClick={() => setTab('mh')}>EN Mental 7</button>
+          <button className={`tab-btn ${tab === 'mh_vi' ? 'active' : ''}`} onClick={() => setTab('mh_vi')}>VI Mental 7</button>
         </div>
 
         {tab === 'en' && (
@@ -150,24 +160,27 @@ const Options: React.FC = () => {
         )}
 
         {tab === 'vi' && (
-          <div className="emotion-grid-9">
-            {Object.entries(COARSE_EMOTIONS_VISUALS).map(([key, visual]) => (
-              <div key={key} className="emotion-card coarse enabled" style={{ borderColor: visual.color }}>
+          <div className="emotion-grid-28">
+            {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
+              <div key={key} className="emotion-card enabled" style={{ borderColor: visual.color }}>
                 <span className="emotion-icon">{visual.icon}</span>
-                <span className="emotion-name">{visual.label}</span>
+                <div className="emotion-card-info">
+                  <span className="emotion-name">{visual.label}</span>
+                  <span className="emotion-group">VI to EN</span>
+                </div>
               </div>
             ))}
           </div>
         )}
 
-        {tab === 'mh' && (
+        {(tab === 'mh' || tab === 'mh_vi') && (
           <div className="emotion-grid-9">
             {Object.entries(MENTAL_HEALTH_VISUALS).map(([key, visual]) => (
               <div key={key} className="emotion-card coarse enabled" style={{ borderColor: visual.color }}>
                 <span className="emotion-icon">{visual.icon}</span>
                 <div className="emotion-card-info">
                   <span className="emotion-name">{visual.label}</span>
-                  <span className="emotion-group">{visual.severityLabel}</span>
+                  <span className="emotion-group">{tab === 'mh_vi' ? 'VI to EN' : visual.severityLabel}</span>
                 </div>
               </div>
             ))}

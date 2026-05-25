@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.mental_health_inference import DETAILED_LABELS
+from app.routes.translate import contains_vietnamese, translate_simple
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 if str(ROOT_DIR) not in sys.path:
@@ -58,10 +59,10 @@ class MentalHealthInference:
         self.is_loaded = False
         self._load_model_if_available()
 
-    # Prefer session_best (trained 20 epochs, 76.5% accuracy), then best_model, then outputs
+    # Prefer the promoted best_model requested by the UI, then session_best, then outputs.
     CANDIDATE_DIRS = [
-        os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "checkpoints", "mental_health_model", "session_best_20260523_205703"),
         os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "checkpoints", "mental_health_model", "best_model"),
+        os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "checkpoints", "mental_health_model", "session_best_20260523_205703"),
         os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "outputs", "mental_health_model"),
     ]
 
@@ -259,6 +260,8 @@ class MentalHealthResponse(BaseModel):
     source: str = "meta_rule_fallback"
     num_labels: int = 15
     processing_time_ms: float = 0.0
+    language: str = "en"
+    translation: Dict[str, str] = Field(default_factory=dict)
 
 
 class BatchMentalHealthResponse(BaseModel):
@@ -292,8 +295,19 @@ async def analyze_mental_health(request: MentalHealthRequest):
     start = time.time()
     
     try:
+        text_for_analysis = request.text
+        translation: Dict[str, str] = {}
+        if contains_vietnamese(request.text):
+            text_for_analysis = translate_simple(request.text)
+            translation = {
+                "source_language": "vi",
+                "target_language": "en",
+                "translated_text": text_for_analysis,
+            }
+            logger.info("Translated VI->EN for mental health analysis: %s -> %s", request.text[:60], text_for_analysis[:60])
+
         infer = get_mental_health_inference()
-        result = infer.classify(text=request.text)
+        result = infer.classify(text=text_for_analysis)
         
         processing_time = (time.time() - start) * 1000
         
@@ -323,6 +337,8 @@ async def analyze_mental_health(request: MentalHealthRequest):
             source=result.get("source", "meta_rule_fallback"),
             num_labels=result.get("num_labels", 15),
             processing_time_ms=processing_time,
+            language="vi" if translation else "en",
+            translation=translation,
         )
     except Exception as e:
         logger.error(f"Mental health analysis failed: {e}", exc_info=True)
@@ -344,7 +360,13 @@ async def analyze_mental_health_batch(request: BatchMentalHealthRequest):
         results = []
         
         for text in request.texts:
-            result = infer.classify(text=text)
+            text_for_analysis = translate_simple(text) if contains_vietnamese(text) else text
+            translation = {
+                "source_language": "vi",
+                "target_language": "en",
+                "translated_text": text_for_analysis,
+            } if text_for_analysis != text else {}
+            result = infer.classify(text=text_for_analysis)
             
             top_preds = [
                 TopPrediction(label=p["label"], confidence=p["confidence"])
@@ -371,6 +393,8 @@ async def analyze_mental_health_batch(request: BatchMentalHealthRequest):
                 source=result.get("source", "meta_rule_fallback"),
                 num_labels=result.get("num_labels", 15),
                 processing_time_ms=0.0,
+                language="vi" if translation else "en",
+                translation=translation,
             ))
         
         return BatchMentalHealthResponse(

@@ -236,6 +236,28 @@ chrome.runtime.onMessage.addListener(
         return true;
       }
 
+      case MessageType.ANALYZE_EMOTION: {
+        const { text, backendApiUrl } = msg.payload as { text: string; backendApiUrl?: string };
+        const baseUrl = (backendApiUrl || settings.backendApiUrl || DEFAULT_SETTINGS.backendApiUrl).replace(/\/+$/, '');
+
+        fetch(`${baseUrl}/api/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, output_mode: 'fine', return_all_probs: true }),
+        })
+          .then(async response => {
+            if (!response.ok) {
+              throw new Error(`Emotion backend returned ${response.status}`);
+            }
+            sendResponse({ payload: await response.json() });
+          })
+          .catch(error => {
+            console.error('[EmotionLens] Emotion backend request failed:', error);
+            sendResponse({ error: error instanceof Error ? error.message : String(error) });
+          });
+        return true;
+      }
+
       case MessageType.ANALYZE_MENTAL_HEALTH: {
         const { text, backendApiUrl } = msg.payload as { text: string; backendApiUrl?: string };
         const baseUrl = (backendApiUrl || settings.backendApiUrl || DEFAULT_SETTINGS.backendApiUrl).replace(/\/+$/, '');

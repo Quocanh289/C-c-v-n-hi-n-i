@@ -453,8 +453,8 @@ function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionR
     badge.style.color = color;
     badge.style.borderColor = `${color}40`;
     badge.title = isMentalHealth
-      ? `${labelText}: ${(confidence * 100).toFixed(0)}% | Mental health model${result.severityLabel ? ` | ${result.severityLabel}` : ''}`
-      : `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'en' ? '28-label' : '9-label'} model`;
+      ? `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'vi' ? 'VI->EN mental health model' : 'Mental health model'}${result.severityLabel ? ` | ${result.severityLabel}` : ''}`
+      : `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'vi' ? 'VI->EN GoEmotions 28-label model' : 'GoEmotions 28-label model'}`;
     badge.textContent = `${icon} ${labelText}`.trim();
     overlayContainer.appendChild(badge);
     try {

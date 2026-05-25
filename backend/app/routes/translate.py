@@ -1,5 +1,6 @@
-"""Traslate API for auto-translating Vietnamese text to English."""
+"""Translate API for auto-translating Vietnamese text to English."""
 import logging
+import re
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -59,6 +60,22 @@ VI_EN_MAP = {
     "không sao": "I am okay, nothing is wrong",
     "khỏe": "I am healthy and fine",
 }
+
+VIETNAMESE_CHAR_RE = re.compile(
+    r"[\u0103\u00e2\u0111\u00ea\u00f4\u01a1\u01b0"
+    r"\u00e0\u00e1\u1ea3\u00e3\u1ea1\u1eb1\u1eaf\u1eb3\u1eb5\u1eb7"
+    r"\u1ea7\u1ea5\u1ea9\u1eab\u1ead\u00e8\u00e9\u1ebb\u1ebd\u1eb9"
+    r"\u1ec1\u1ebf\u1ec3\u1ec5\u1ec7\u00ec\u00ed\u1ec9\u0129\u1ecb"
+    r"\u00f2\u00f3\u1ecf\u00f5\u1ecd\u1ed3\u1ed1\u1ed5\u1ed7\u1ed9"
+    r"\u1edd\u1edb\u1edf\u1ee1\u1ee3\u00f9\u00fa\u1ee7\u0169\u1ee5"
+    r"\u1eeb\u1ee9\u1eed\u1eef\u1ef1\u1ef3\u00fd\u1ef7\u1ef9\u1ef5]",
+    re.IGNORECASE,
+)
+
+
+def contains_vietnamese(text: str) -> bool:
+    """Return True when text contains Vietnamese-specific characters."""
+    return bool(VIETNAMESE_CHAR_RE.search(text))
 
 
 def translate_simple(text: str) -> str:

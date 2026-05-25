@@ -21,7 +21,7 @@ import {
 } from '../types/emotion';
 
 // Vietnamese character detection for language classification
-const VIETNAMESE_CHARS_REGEX = /[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i;
+const VIETNAMESE_CHARS_REGEX = /[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/gi;
 
 function detectLanguage(text: string): 'vi' | 'en' | 'mixed' {
   const viChars = text.match(VIETNAMESE_CHARS_REGEX);
@@ -29,7 +29,7 @@ function detectLanguage(text: string): 'vi' | 'en' | 'mixed' {
   const totalChars = text.replace(/\s/g, '').length;
   if (totalChars === 0) return 'en';
   const viRatio = viCount / totalChars;
-  if (viRatio > 0.15) {
+  if (viCount > 0 && viRatio > 0.02) {
     const enWords = text.match(/[a-z]+/gi)?.length || 0;
     if (enWords > 0 && enWords / (text.length / 5) > 0.3) return 'mixed';
     return 'vi';
@@ -250,7 +250,14 @@ export class EmotionClassifier {
   async analyze(text: string, settings: ExtensionSettings): Promise<EmotionResult> {
     const startTime = performance.now();
     const language = detectLanguage(text);
-    const isEnglish = language === 'en';
+
+    if (!settings.localOnly) {
+      try {
+        return await this.requestBackendEmotionAnalysis(text, settings, startTime);
+      } catch (error) {
+        console.warn('[EmotionLens] Emotion backend unavailable, using local fallback:', error);
+      }
+    }
     
     // Auto-translate Vietnamese to English for unified 28-label analysis
     let analyzeText = text;
@@ -287,6 +294,51 @@ export class EmotionClassifier {
     };
 
     return finalResult;
+  }
+
+  private async requestBackendEmotionAnalysis(
+    text: string,
+    settings: ExtensionSettings,
+    startTime: number,
+  ): Promise<EmotionResult> {
+    const backendApiUrl = settings.backendApiUrl || 'http://localhost:8001';
+    const response = await chrome.runtime.sendMessage({
+      type: MessageType.ANALYZE_EMOTION,
+      payload: { text, backendApiUrl },
+    }) as { payload?: any; error?: string };
+
+    if (!response?.payload) {
+      throw new Error(response?.error || 'Emotion backend request failed');
+    }
+
+    const data = response.payload;
+    const emotionScores = this.emptyEmotionScores();
+    for (const [label, score] of Object.entries(data.scores_9 || {})) {
+      if (label in emotionScores) {
+        emotionScores[label as EmotionCategory] = Number(score);
+      }
+    }
+
+    const scores28 = {} as Emotion28Scores;
+    for (const label of GOEMOTIONS_28_LABELS) {
+      scores28[label] = Number(data.scores_28?.[label] ?? 0);
+    }
+
+    return {
+      analysisType: 'emotion',
+      primaryEmotion: data.primary_emotion || 'neutral',
+      scores: emotionScores,
+      scores28,
+      scores9: data.scores_9,
+      labelType: 'fine',
+      numLabels: Number(data.num_labels || 28),
+      confidence: Number(data.confidence || 0),
+      toxicityScore: Number(data.toxicity_score || 0),
+      sarcasmScore: Number(data.sarcasm_score || 0),
+      language: data.language === 'vi' || data.language === 'mixed' ? data.language : 'en',
+      source: 'backend',
+      inferenceTimeMs: performance.now() - startTime,
+    };
   }
 
   /**

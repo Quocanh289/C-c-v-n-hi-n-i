@@ -30,11 +30,11 @@
     .setting-row input[type="range"] { width: 200px; cursor: pointer; accent-color: #6366f1; }
     
     /* Tab Bar */
-    .tab-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     .tab-btn {
       padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db;
       background: white; font-size: 13px; font-weight: 600; cursor: pointer;
-      color: #6b7280; transition: all 0.2s;
+      color: #6b7280; transition: all 0.2s; flex: 1 1 150px;
     }
     .tab-btn.active {
       background: #eef2ff; border-color: #6366f1; color: #4f46e5;
