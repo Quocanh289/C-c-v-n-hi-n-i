@@ -56,8 +56,40 @@ const TARGET_TEXT_SELECTOR = [
   'div.md p',
 ].join(', ');
 
+const CHAT_EXCLUDE_SELECTOR = [
+  '[contenteditable="true"]',
+  '[role="textbox"]',
+  '[aria-multiline="true"]',
+  '[aria-label*="chat" i]',
+  '[aria-label*="chats" i]',
+  '[aria-label*="conversation" i]',
+  '[aria-label*="message" i]',
+  '[aria-label*="messenger" i]',
+  '[aria-label*="direct message" i]',
+  '[aria-label*="inbox" i]',
+  '[data-pagelet*="Messenger"]',
+  '[data-testid*="chat" i]',
+  '[data-testid*="conversation" i]',
+  '[data-testid*="dm" i]',
+  '[data-testid*="messageDrawer" i]',
+  '[data-testid*="DMDrawer" i]',
+  '[data-e2e*="chat" i]',
+  'div[role="dialog"][aria-label*="chat" i]',
+  'div[role="dialog"][aria-label*="conversation" i]',
+  'div[role="dialog"][aria-label*="message" i]',
+  'div[role="dialog"][aria-label*="messenger" i]',
+  'div[role="complementary"][aria-label*="chat" i]',
+  'div[role="complementary"][aria-label*="conversation" i]',
+  'section[aria-label*="chat" i]',
+  'section[aria-label*="conversation" i]',
+  'ytd-live-chat-frame',
+  'yt-live-chat-app',
+  'yt-live-chat-text-message-renderer',
+].join(', ');
+
 const TEXT_NODE_EXCLUDE_SELECTOR = [
   `.${OVERLAY_CONTAINER_CLASS}`,
+  CHAT_EXCLUDE_SELECTOR,
   'a',
   'button',
   '[role="button"]',
@@ -236,10 +268,12 @@ function hasMetadataAttribute(element: HTMLElement): boolean {
 }
 
 function isTextNodeExcluded(parent: HTMLElement): boolean {
+  if (isInsideChatSurface(parent)) return true;
   if (parent.closest(TARGET_TEXT_SELECTOR)) return false;
   if (parent.closest(TEXT_NODE_EXCLUDE_SELECTOR)) return true;
   let current: HTMLElement | null = parent;
   while (current && current !== document.body) {
+    if (isChatSurface(current)) return true;
     if (current.matches(TARGET_TEXT_SELECTOR)) return false;
     if (hasMetadataAttribute(current)) return true;
     current = current.parentElement;
@@ -256,8 +290,17 @@ function isLikelyMetadataText(text: string): boolean {
   return false;
 }
 
+function isChatSurface(element: HTMLElement): boolean {
+  return element.matches(CHAT_EXCLUDE_SELECTOR);
+}
+
+function isInsideChatSurface(element: HTMLElement): boolean {
+  return Boolean(element.closest(CHAT_EXCLUDE_SELECTOR));
+}
+
 function isAllowedContentElement(element: HTMLElement): boolean {
   if (element.closest(`.${OVERLAY_CONTAINER_CLASS}`)) return false;
+  if (isInsideChatSurface(element)) return false;
   if (element.matches(TARGET_TEXT_SELECTOR)) return true;
   if (element.closest(TEXT_NODE_EXCLUDE_SELECTOR)) return false;
   return Boolean(element.closest(GENERIC_POST_COMMENT_SELECTOR));
@@ -266,10 +309,11 @@ function isAllowedContentElement(element: HTMLElement): boolean {
 function extractTextFromElement(element: HTMLElement): string {
   if (processedElements.has(element)) return '';
   if (element.closest(`.${OVERLAY_CONTAINER_CLASS}`)) return '';
+  if (isInsideChatSurface(element)) return '';
   if (!isAllowedContentElement(element)) return '';
   
   const tagName = element.tagName.toLowerCase();
-  if (['script', 'style', 'noscript', 'iframe', 'svg', 'canvas', 'input', 'textarea'].includes(tagName)) return '';
+  if (['script', 'style', 'noscript', 'iframe', 'svg', 'canvas', 'input', 'textarea', 'select'].includes(tagName)) return '';
   
   const texts: string[] = [];
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null as unknown as NodeFilter);
@@ -293,15 +337,28 @@ function extractTextFromElement(element: HTMLElement): string {
 
 function findTextElements(): HTMLElement[] {
   const selectors = PLATFORM_SELECTORS[platform] || [];
-  if (selectors.length === 0) return findGenericTextElements();
-  
   const elements: HTMLElement[] = [];
+  const seen = new WeakSet<HTMLElement>();
+
   for (const selector of selectors) {
     const found = document.querySelectorAll<HTMLElement>(selector);
     found.forEach(el => {
-      if (!processedElements.has(el) && isAllowedContentElement(el)) elements.push(el);
+      if (!seen.has(el) && !processedElements.has(el) && isAllowedContentElement(el)) {
+        seen.add(el);
+        elements.push(el);
+      }
     });
   }
+
+  // Social platforms change markup often. Keep platform-specific selectors fast,
+  // but always fall back to generic post/comment scanning when they miss.
+  findGenericTextElements().forEach(el => {
+    if (!seen.has(el)) {
+      seen.add(el);
+      elements.push(el);
+    }
+  });
+
   return elements;
 }
 
@@ -318,6 +375,7 @@ function findGenericTextElements(): HTMLElement[] {
 // Analysis Queue & Batch Processing
 // ====================================================
 function queueAnalysis(element: HTMLElement, text: string): void {
+  if (isInsideChatSurface(element)) return;
   if (!isAllowedContentElement(element)) return;
   if (isLikelyMetadataText(text)) return;
   debugCounters.queued++;

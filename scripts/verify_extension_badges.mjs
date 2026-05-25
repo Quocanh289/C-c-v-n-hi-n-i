@@ -118,6 +118,84 @@ const modes = [
 
 const results = [];
 
+async function injectContentWithMode({ mode, text, url, youtube = false }) {
+  await cdp('Page.navigate', { url });
+  await delay(500);
+  await evaluate(`(() => {
+    if (!document.body) {
+      document.documentElement.appendChild(document.createElement('body'));
+    }
+    document.body.replaceChildren();
+    if (${JSON.stringify(youtube)}) {
+      const thread = document.createElement('ytd-comment-thread-renderer');
+      const comment = document.createElement('yt-formatted-string');
+      comment.id = 'content-text';
+      comment.textContent = ${JSON.stringify(text)};
+      thread.appendChild(comment);
+      document.body.appendChild(thread);
+      return;
+    }
+    const main = document.createElement('main');
+    const article = document.createElement('article');
+    const paragraph = document.createElement('p');
+    paragraph.textContent = ${JSON.stringify(text)};
+    article.appendChild(paragraph);
+    main.appendChild(article);
+    document.body.appendChild(main);
+  })()`);
+  await delay(250);
+
+  const settings = { ...settingsBase, activeMode: mode };
+  const mock = `
+    window.__settings = ${JSON.stringify(settings)};
+    window.fetch = async () => ({
+      ok: true,
+      json: async () => ({ translated_text: 'I feel sad and exhausted' })
+    });
+    window.chrome = {
+      storage: {
+        sync: {
+          get: async () => ({ emotionLensSettings: window.__settings }),
+          set: async () => undefined
+        },
+        onChanged: { addListener: () => undefined }
+      },
+      runtime: {
+        sendMessage: async (message) => {
+          if (message.type === 'ANALYZE_EMOTION') {
+            return { payload: {
+              primary_emotion: 'joy',
+              confidence: 0.91,
+              label_type: 'fine',
+              language: 'en',
+              scores_28: { joy: 0.91, neutral: 0.02 },
+              scores_9: { joy: 0.91, neutral: 0.02 },
+              toxicity_score: 0,
+              sarcasm_score: 0,
+              num_labels: 28
+            } };
+          }
+          return {};
+        },
+        onMessage: { addListener: () => undefined }
+      }
+    };
+  `;
+  await evaluate(mock);
+  await evaluate(`(() => {
+    const fakeCurrentScript = { tagName: 'SCRIPT', src: 'chrome-extension://verify/content.js' };
+    Object.defineProperty(document, 'currentScript', { configurable: true, get: () => fakeCurrentScript });
+  })()`);
+  await evaluate(contentScript);
+  await evaluate('delete document.currentScript');
+  await delay(1300);
+
+  return evaluate(`(() => {
+    const badge = document.querySelector('.emotion-lens-badge');
+    return badge ? { text: badge.textContent, title: badge.title } : null;
+  })()`);
+}
+
 try {
   await cdp('Runtime.enable');
   await cdp('Page.enable');
@@ -191,6 +269,21 @@ try {
     })()`);
     const ok = Boolean(badge?.text?.includes(expectedText) && badge?.title?.includes(expectedTitle));
     results.push({ mode, ok, badge });
+  }
+
+  const platformScenarios = [
+    ['facebook', 'https://www.facebook.com.invalid/emotion-lens-verify', 'I am happy on Facebook today', false],
+    ['x', 'https://x.com.invalid/emotion_lens_verify/status/1', 'I am happy on X today', false],
+    ['tiktok', 'https://www.tiktok.com.invalid/@emotionlens/video/1', 'I am happy on TikTok today', false],
+    ['threads', 'https://www.threads.net.invalid/@emotionlens/post/1', 'I am happy on Threads today', false],
+    ['reddit', 'https://www.reddit.com.invalid/r/emotionlens/comments/1/test/', 'I am happy on Reddit today', false],
+    ['youtube', 'https://www.youtube.com.invalid/watch?v=emotionlens', 'I am happy on YouTube today', true],
+  ];
+
+  for (const [platform, url, text, youtube] of platformScenarios) {
+    const badge = await injectContentWithMode({ mode: 'emotion_en', text, url, youtube });
+    const ok = Boolean(badge?.text?.includes('Joy') && badge?.title?.includes('GoEmotions 28-label model'));
+    results.push({ platform, mode: 'emotion_en', ok, badge });
   }
 } finally {
   ws.close();

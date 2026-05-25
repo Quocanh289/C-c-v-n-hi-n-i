@@ -15,7 +15,7 @@ import {
   MENTAL_HEALTH_VISUALS,
 } from '../types/emotion';
 
-type PopupTab = 'en' | 'vi' | 'mh';
+type PopupTab = 'en' | 'vi' | 'mh' | 'mh_vi';
 
 export default function Popup() {
   // --- Tất cả State đưa về chung 1 nơi ---
@@ -28,12 +28,14 @@ export default function Popup() {
   // --- Các hàm hỗ trợ ---
   const modeToTab = (mode: DetectionMode): PopupTab => {
     if (mode === 'mental_health_en') return 'mh';
+    if (mode === 'mental_health_vi') return 'mh_vi';
     if (mode === 'emotion_vi') return 'vi';
     return 'en';
   };
 
   const tabToMode = (tab: PopupTab): DetectionMode => {
     if (tab === 'mh') return 'mental_health_en';
+    if (tab === 'mh_vi') return 'mental_health_vi';
     if (tab === 'vi') return 'emotion_vi';
     return 'emotion_en';
   };
@@ -144,12 +146,15 @@ export default function Popup() {
         <button className={`tab-btn ${tab === 'mh' ? 'active' : ''}`} onClick={() => selectMode('mh')}>
           EN Mental
         </button>
+        <button className={`tab-btn ${tab === 'mh_vi' ? 'active' : ''}`} onClick={() => selectMode('mh_vi')}>
+          VI Mental
+        </button>
       </div>
 
       <div className="model-info">
-        <strong>{tab === 'mh' ? 'Mental health 7-label model' : 'Emotion detection model'}</strong>
+        <strong>{tab === 'mh' || tab === 'mh_vi' ? 'Mental health 7-label model' : 'Emotion detection model'}</strong>
         <br />
-        {tab === 'mh' ? 'DeBERTa-v3 + LoRA through backend best_model' : 'One active mode scans posts and comments only'}
+        {tab === 'mh' || tab === 'mh_vi' ? 'DeBERTa-v3 + LoRA through backend best_model' : 'One active mode scans posts and comments only'}
       </div>
 
       {tab === 'en' && (
@@ -197,7 +202,7 @@ export default function Popup() {
         </div>
       )}
 
-      {tab === 'mh' && (
+      {(tab === 'mh' || tab === 'mh_vi') && (
         <div className="emotion-grid-9">
           {Object.entries(MENTAL_HEALTH_VISUALS).map(([key, visual]) => (
             <div key={key} className="emotion-card coarse" style={{ borderLeftColor: visual.color, borderLeftWidth: 4 }}>
@@ -221,7 +226,7 @@ export default function Popup() {
       </div>
 
       <div className="popup-footer">
-        <span className="footer-text">Active mode: {tab === 'mh' ? 'Mental Health EN' : tab === 'vi' ? 'Emotion VI' : 'Emotion EN'}</span>
+        <span className="footer-text">Active mode: {tab === 'mh' ? 'Mental Health EN' : tab === 'mh_vi' ? 'Mental Health VI' : tab === 'vi' ? 'Emotion VI' : 'Emotion EN'}</span>
       </div>
     </div>
   );
