@@ -1,19 +1,15 @@
-"""
-User-saved text history models for dashboard and analysis tracking.
-"""
-
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Float, String, Text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import DeclarativeBase
+from pydantic import BaseModel
+from sqlalchemy import DateTime, Float, String, Text, func
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-
+# SQLAlchemy 2.0 Declarative base
 class Base(DeclarativeBase):
     pass
 
@@ -21,40 +17,43 @@ class Base(DeclarativeBase):
 class UserSavedText(Base):
     __tablename__ = "user_saved_texts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    source_text = Column(Text, nullable=False)
-    source_url = Column(String(2048), nullable=True)
-    predicted_issue = Column(String(255), nullable=True)
-    confidence = Column(Float, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False, index=True
+    )
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    predicted_issue: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, default="Normal")
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserSavedText id={self.id!s} user_id={self.user_id!s} "
+            f"predicted_issue={self.predicted_issue!r} confidence={self.confidence}>"
+        )
 
 
+# Pydantic models used by routes
 class SaveTextRequest(BaseModel):
-    uid: str = Field(..., description="Anonymous user UUID")
-    text: str = Field(..., min_length=1, description="Highlighted text snippet")
-    sourceUrl: str = Field(default="", description="URL of the page where text was saved")
+    uid: str
+    text: str
+    sourceUrl: Optional[str] = None
+    # keep compatibility: some code may try to access `source_text`
+    source_text: Optional[str] = None
 
 
 class UserSavedTextResponse(BaseModel):
-    id: str
-    user_id: str
+    id: uuid.UUID
+    user_id: uuid.UUID
     source_text: str
     source_url: Optional[str] = None
     predicted_issue: Optional[str] = None
-    confidence: Optional[float] = None
-    created_at: Optional[str] = None
+    confidence: Optional[float] = 0.0
+    created_at: datetime
 
     model_config = {"from_attributes": True}
-
-    @classmethod
-    def model_validate(cls, obj: UserSavedText) -> "UserSavedTextResponse":
-        return cls(
-            id=str(obj.id),
-            user_id=str(obj.user_id),
-            source_text=obj.source_text,
-            source_url=obj.source_url,
-            predicted_issue=obj.predicted_issue,
-            confidence=obj.confidence,
-            created_at=obj.created_at.isoformat() if obj.created_at else None,
-        )
