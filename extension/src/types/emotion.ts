@@ -99,7 +99,7 @@ export type Emotion28Scores = Record<GoEmotion28, number>;
 export type Emotion9Scores = Record<CoarseEmotion, number>;
 
 /** Mutually exclusive analysis modes */
-export type DetectionMode = 'emotion_en' | 'emotion_vi' | 'mental_health_en';
+export type DetectionMode = 'emotion_en' | 'emotion_vi' | 'mental_health_en' | 'mental_health_vi';
 
 /** 7 mental health labels (English) */
 export const MENTAL_HEALTH_LABELS = [

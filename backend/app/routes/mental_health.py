@@ -58,29 +58,24 @@ class MentalHealthInference:
         self.is_loaded = False
         self._load_model_if_available()
 
-    BEST_MODEL_DIR = os.path.join(
-        str(Path(__file__).resolve().parents[3]),
-        "ai_nlp", "training", "checkpoints", "mental_health_model", "best_model"
-    )
+    # Prefer session_best (trained 20 epochs, 76.5% accuracy), then best_model, then outputs
+    CANDIDATE_DIRS = [
+        os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "checkpoints", "mental_health_model", "session_best_20260523_205703"),
+        os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "checkpoints", "mental_health_model", "best_model"),
+        os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "outputs", "mental_health_model"),
+    ]
 
     def _load_model_if_available(self) -> None:
-        model_dir = self.BEST_MODEL_DIR
-        
-        if not os.path.exists(os.path.join(model_dir, "adapter_model.safetensors")):
-            logger.warning("No trained model at %s; using keyword fallback.", model_dir)
-            model_dir = None
-            # Fallback: search other paths
-            for candidate in [
-                os.path.join(str(Path(__file__).resolve().parents[3]), "ai_nlp", "training", "outputs", "mental_health_model"),
-                self.config.get_output_model_dir(),
-            ]:
-                if os.path.exists(os.path.join(candidate, "adapter_model.safetensors")):
-                    model_dir = candidate
-                    break
-            
-            if model_dir is None:
-                logger.warning("No trained mental health model found anywhere; using keyword fallback.")
-                return
+        # Find first valid model directory
+        model_dir = None
+        for candidate in self.CANDIDATE_DIRS:
+            if os.path.exists(os.path.join(candidate, "adapter_model.safetensors")):
+                model_dir = candidate
+                break
+
+        if model_dir is None:
+            logger.warning("No trained mental health model found; using keyword fallback.")
+            return
 
         if AutoTokenizer is None:
             logger.warning("transformers is unavailable; using keyword fallback.")
@@ -89,20 +84,26 @@ class MentalHealthInference:
         try:
             import json
             import torch
-            from transformers import AutoTokenizer as HFAutoTokenizer
-            from ai_nlp.training.mental_health_pipeline.config import TrainingConfig as PipeConfig
-            from ai_nlp.training.mental_health_pipeline.model import load_trained_model as pipeline_load
+            from peft import PeftModel
+            from transformers import AutoModelForSequenceClassification, AutoConfig, AutoTokenizer as HFAutoTokenizer
             
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            logger.info("Loading mental health model on device: %s", device)
+            logger.info("Loading mental health model from %s on device: %s", model_dir, device)
             
-            # Use config for best_model checkpoint (outputs dir)
-            pipe_config = PipeConfig()
-            self.model = pipeline_load(model_dir, pipe_config)
+            # Load base DeBERTa + LoRA adapter directly (no MentalHealthClassifier wrapper)
+            model_config = AutoConfig.from_pretrained(
+                "microsoft/deberta-v3-base", num_labels=7
+            )
+            base_model = AutoModelForSequenceClassification.from_pretrained(
+                "microsoft/deberta-v3-base", config=model_config,
+                torch_dtype=torch.float32, ignore_mismatched_sizes=True,
+            ).to(device)
+            
+            self.model = PeftModel.from_pretrained(base_model, model_dir)
             self.model = self.model.to(device)
             self.model.eval()
             
-            self.tokenizer = HFAutoTokenizer.from_pretrained(pipe_config.model_name)
+            self.tokenizer = HFAutoTokenizer.from_pretrained("microsoft/deberta-v3-base")
             self.is_loaded = True
             logger.info("Loaded mental health model from %s on %s", model_dir, device)
         except Exception as exc:

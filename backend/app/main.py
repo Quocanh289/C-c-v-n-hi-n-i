@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from app.routes import analyze, learning, slang, health, mental_health
+from app.routes import analyze, learning, slang, health, mental_health, translate
 from app.models.inference import get_inference
 from app.models.mental_health_inference import get_mental_health_inference
 from app.routes.dashboard import router as dashboard_router
@@ -90,6 +90,7 @@ app.include_router(analyze.router, prefix="/api", tags=["analysis"])
 app.include_router(learning.router, prefix="/api", tags=["learning"])
 app.include_router(slang.router, prefix="/api", tags=["slang"])
 app.include_router(mental_health.router, prefix="/api", tags=["mental_health"])
+app.include_router(translate.router, prefix="/api", tags=["translate"])
 
 
 @app.get("/")
