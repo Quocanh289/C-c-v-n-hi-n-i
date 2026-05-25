@@ -213,6 +213,28 @@ function injectStyles(): void {
       filter: brightness(1.2);
       transform: scale(1.05);
     }
+
+    .emotion-lens-signal-list {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      max-width: 220px;
+      overflow: hidden;
+    }
+
+    .emotion-lens-signal-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 5px;
+      border-radius: 7px;
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 1;
+      color: #4b5563;
+      background: rgba(107, 114, 128, 0.10);
+      border: 1px solid rgba(107, 114, 128, 0.18);
+      white-space: nowrap;
+    }
     
     /* Highlight effects */
     .emotion-lens-highlight {
@@ -510,11 +532,29 @@ function applyVisualOverlay(element: HTMLElement, text: string, result: EmotionR
     badge.style.background = bgColor;
     badge.style.color = color;
     badge.style.borderColor = `${color}40`;
+    const secondarySignals = isMentalHealth
+      ? (result.riskSignals || []).filter(signal => signal.label !== result.primaryEmotion).slice(0, 3)
+      : (result.topEmotions || []).filter(signal => signal.label !== (emotion28 || result.primaryEmotion)).slice(0, 3);
+    const signalSummary = secondarySignals
+      .map(signal => `${formatSignalLabel(signal.label)} ${(signal.score * 100).toFixed(0)}%`)
+      .join(', ');
     badge.title = isMentalHealth
-      ? `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'vi' ? 'VI->EN mental health model' : 'Mental health model'}${result.severityLabel ? ` | ${result.severityLabel}` : ''}`
-      : `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'vi' ? 'VI->EN GoEmotions 28-label model' : 'GoEmotions 28-label model'}`;
-    badge.textContent = `${icon} ${labelText}`.trim();
+      ? `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'vi' ? 'VI->EN mental health screening' : 'Mental health screening'}${result.severityLabel ? ` | ${result.severityLabel}` : ''}${signalSummary ? ` | Signals: ${signalSummary}` : ''}`
+      : `${labelText}: ${(confidence * 100).toFixed(0)}% | ${result.language === 'vi' ? 'VI->EN multi-label emotions' : 'Multi-label emotions'}${signalSummary ? ` | Also: ${signalSummary}` : ''}`;
+    badge.textContent = `${icon} ${labelText}${secondarySignals.length > 0 ? ` +${secondarySignals.length}` : ''}`.trim();
     overlayContainer.appendChild(badge);
+
+    if (secondarySignals.length > 0) {
+      const signalList = document.createElement('span');
+      signalList.className = 'emotion-lens-signal-list';
+      secondarySignals.forEach(signal => {
+        const chip = document.createElement('span');
+        chip.className = 'emotion-lens-signal-chip';
+        chip.textContent = `${formatSignalLabel(signal.label)} ${(signal.score * 100).toFixed(0)}%`;
+        signalList.appendChild(chip);
+      });
+      overlayContainer.appendChild(signalList);
+    }
     try {
       element.insertAdjacentElement('afterend', overlayContainer);
     } catch {
@@ -550,6 +590,18 @@ function getTopEmotion28(scores28: Record<string, number>): string | null {
   }
   
   return topEmotion;
+}
+
+function formatSignalLabel(label: string): string {
+  if (label in GOEMOTIONS_28_VISUALS) {
+    return GOEMOTIONS_28_VISUALS[label as keyof typeof GOEMOTIONS_28_VISUALS].label;
+  }
+  if (MENTAL_HEALTH_LABELS.includes(label as any)) {
+    return MENTAL_HEALTH_VISUALS[label as keyof typeof MENTAL_HEALTH_VISUALS].label;
+  }
+  return label
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
 }
 
 function isResultForActiveMode(result: EmotionResult): boolean {

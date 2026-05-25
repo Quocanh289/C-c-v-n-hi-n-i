@@ -69,7 +69,7 @@ const SidePanel: React.FC = () => {
       <style>{`body { margin: 0; background: #f9fafb; }`}</style>
       <h1 style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>Emotion Lens</h1>
       <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>
-        Only one mode scans at a time. Text is taken from posts and comments.
+        Only one mode scans at a time. Badges show the primary result plus secondary signal chips.
       </p>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>

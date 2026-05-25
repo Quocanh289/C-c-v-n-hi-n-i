@@ -154,7 +154,9 @@ export default function Popup() {
       <div className="model-info">
         <strong>{tab === 'mh' || tab === 'mh_vi' ? 'Mental health 7-label model' : 'Emotion detection model'}</strong>
         <br />
-        {tab === 'mh' || tab === 'mh_vi' ? 'DeBERTa-v3 + LoRA through backend best_model' : 'One active mode scans posts and comments only'}
+        {tab === 'mh' || tab === 'mh_vi'
+          ? 'Shows primary screening result plus risk-signal chips when present'
+          : 'Shows primary emotion plus secondary emotion chips when present'}
       </div>
 
       {tab === 'en' && (

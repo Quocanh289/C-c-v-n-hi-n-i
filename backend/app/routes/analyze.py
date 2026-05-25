@@ -41,6 +41,7 @@ class AnalyzeResponse(BaseModel):
     text: str
     primary_emotion: str
     confidence: float = 0.0
+    top_emotions: List[Dict[str, float | str]] = Field(default_factory=list)
     label_type: str = "fine"
     language: str = "en"
     scores_28: Dict[str, float] = Field(default_factory=dict)
@@ -84,6 +85,7 @@ def _to_response(original_text: str, result: Dict[str, Any], screening: Dict[str
         text=original_text[:100] + "..." if len(original_text) > 100 else original_text,
         primary_emotion=result.get("primary_emotion", "neutral"),
         confidence=result.get("confidence", 0.0),
+        top_emotions=result.get("top_emotions", []),
         label_type=result.get("label_type", "fine"),
         language=result.get("language", "en"),
         scores_28=result.get("scores_28", {}),

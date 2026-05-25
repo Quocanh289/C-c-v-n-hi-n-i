@@ -17,6 +17,7 @@ import {
   GOEMOTIONS_28_LABELS,
   COARSE_EMOTIONS_LABELS,
   EMOTION_28_TO_9_MAP,
+  LabelScore,
   MessageType,
 } from '../types/emotion';
 
@@ -281,6 +282,7 @@ export class EmotionClassifier {
     const finalResult: EmotionResult = {
       analysisType: 'emotion',
       primaryEmotion: this.getPrimaryEmotion(ruleBasedResult, analyzeText, settings),
+      topEmotions: this.topLabelScores(scores28),
       scores: ruleBasedResult,
       scores28: scores28,
       labelType: 'fine',
@@ -327,6 +329,9 @@ export class EmotionClassifier {
     return {
       analysisType: 'emotion',
       primaryEmotion: data.primary_emotion || 'neutral',
+      topEmotions: Array.isArray(data.top_emotions)
+        ? data.top_emotions.map((item: any) => ({ label: String(item.label), score: Number(item.score ?? item.confidence ?? 0) }))
+        : this.topLabelScores(scores28),
       scores: emotionScores,
       scores28,
       scores9: data.scores_9,
@@ -465,6 +470,7 @@ export class EmotionClassifier {
       primary_condition?: string;
       primary_confidence?: number;
       all_scores?: Record<string, number>;
+      risk_signals?: Array<{ label: string; score: number }>;
       needs_attention?: boolean;
       severity_level?: number;
       severity_label?: string;
@@ -479,6 +485,9 @@ export class EmotionClassifier {
     return {
       analysisType: 'mental_health',
       primaryEmotion: label,
+      riskSignals: Array.isArray(data.risk_signals)
+        ? data.risk_signals.map(item => ({ label: String(item.label), score: Number(item.score || 0) }))
+        : this.topLabelScores(scores, 4, 0.15),
       scores: this.emptyEmotionScores(),
       mentalHealthScores: scores,
       labelType: 'mental_health',
@@ -542,6 +551,18 @@ export class EmotionClassifier {
       scores[label] = Number(rawScores[label] ?? 0);
     }
     return scores;
+  }
+
+  private topLabelScores(scores: Record<string, number>, limit = 3, threshold = 0.15): LabelScore[] {
+    const ranked = Object.entries(scores)
+      .filter(([label, score]) => label !== 'neutral' && label !== 'Normal' && Number(score) >= threshold)
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, limit)
+      .map(([label, score]) => ({ label, score: Number(score) }));
+
+    if (ranked.length > 0) return ranked;
+    const neutral = Number(scores.neutral ?? scores.Normal ?? 0);
+    return neutral > 0 ? [{ label: scores.Normal !== undefined ? 'Normal' : 'neutral', score: neutral }] : [];
   }
 
   private emptyMentalHealthResult(

@@ -64,6 +64,20 @@ class GoEmotionsInference:
 
     is_loaded = True
 
+    def _top_scores(self, scores: Dict[str, float], limit: int = 3, threshold: float = 0.15) -> list[Dict[str, float]]:
+        ranked = sorted(
+            (
+                {"label": label, "score": round(float(score), 4)}
+                for label, score in scores.items()
+                if score >= threshold and label != "neutral"
+            ),
+            key=lambda item: item["score"],
+            reverse=True,
+        )
+        if ranked:
+            return ranked[:limit]
+        return [{"label": "neutral", "score": round(float(scores.get("neutral", 0.0)), 4)}]
+
     def classify(self, text: str, output_mode: Optional[str] = None) -> Dict:
         value = _normalize(text)
         coarse = {label: 0.0 for label in COARSE_EMOTIONS}
@@ -86,6 +100,7 @@ class GoEmotionsInference:
         return {
             "primary_emotion": primary,
             "confidence": confidence,
+            "top_emotions": self._top_scores(fine if label_type == "fine" else coarse),
             "label_type": label_type,
             "language": language,
             "scores_28": fine,

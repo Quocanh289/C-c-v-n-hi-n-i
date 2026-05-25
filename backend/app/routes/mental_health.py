@@ -12,9 +12,11 @@ Endpoints:
 
 import logging
 import os
+import re
 import sys
 import time
 import torch
+import unicodedata
 from typing import Dict, List, Optional
 from functools import lru_cache
 from pathlib import Path
@@ -47,6 +49,157 @@ except Exception:  # pragma: no cover - transformers is already a backend depend
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mental-health", tags=["mental_health"])
+
+
+MENTAL_HEALTH_SIGNAL_PATTERNS = {
+    "Suicidal": [
+        "kill myself", "end my life", "want to die", "suicide", "self harm",
+        "don't want to live", "dont want to live", "better off dead",
+        "muon chet", "tu tu", "tu sat", "khong muon song", "tu lam hai",
+    ],
+    "Depression": [
+        "depressed", "depression", "hopeless", "worthless", "empty", "numb",
+        "no motivation", "lost interest", "can't get out of bed", "cant get out of bed",
+        "i hate myself", "meaningless", "sad all the time", "crying everyday",
+        "tram cam", "tuyet vong", "vo dung", "vo gia tri", "mat hung thu",
+        "khong con hung thu", "rat buon", "buon ca ngay", "khoc moi ngay",
+    ],
+    "Anxiety": [
+        "anxious", "anxiety", "panic", "panic attack", "overthinking",
+        "can't stop worrying", "cant stop worrying", "constant worry", "heart racing",
+        "can't breathe", "cant breathe", "social anxiety",
+        "lo lang", "hoang loan", "bon chon", "tim dap nhanh", "kho tho",
+        "so hai", "so giao tiep", "suy nghi qua nhieu",
+    ],
+    "Bipolar": [
+        "manic", "mania", "hypomania", "hypomanic", "bipolar", "mood swings",
+        "rapid cycling", "grandiose", "pressured speech", "flight of ideas",
+        "hung cam", "luong cuc", "dao dong khi sac", "luc vui luc buon",
+    ],
+    "Stress": [
+        "stressed", "stress", "overwhelmed", "burnout", "burned out",
+        "can't cope", "cant cope", "can't handle it", "cant handle it",
+        "too much pressure", "overworked", "exhausted", "insomnia",
+        "can't sleep", "cant sleep", "cannot sleep",
+        "cang thang", "qua tai", "ap luc", "kiet suc", "met moi", "khong chiu noi",
+        "khong the doi pho", "mat ngu", "khong ngu",
+    ],
+    "Personality_disorder": [
+        "bpd", "borderline", "personality disorder", "abandonment issues",
+        "unstable relationships", "identity disturbance", "emotional dysregulation",
+        "narcissistic", "dissociative", "depersonalization", "derealization",
+        "roi loan nhan cach", "so bi bo roi", "mat ket noi thuc tai",
+    ],
+}
+
+MENTAL_HEALTH_CONTEXT_TERMS = [
+    "mental health", "therapy", "therapist", "psychiatrist", "psychologist",
+    "diagnosed", "diagnosis", "medication", "antidepressant", "ssri",
+    "suc khoe tam than", "tri lieu", "bac si tam ly", "chan doan", "thuoc tram cam",
+]
+
+SIGNAL_LABEL_PRIORITY = {
+    "Suicidal": 6,
+    "Depression": 5,
+    "Anxiety": 4,
+    "Stress": 3,
+    "Bipolar": 2,
+    "Personality_disorder": 1,
+}
+
+MIN_CONFIDENCE_FOR_UNMATCHED_LABEL = 0.35
+
+
+def _normalize_for_gate(text: str) -> str:
+    value = unicodedata.normalize("NFD", text.lower().replace("đ", "d").replace("Đ", "d"))
+    value = "".join(char for char in value if unicodedata.category(char) != "Mn")
+    value = re.sub(r"[^a-z0-9\s']", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _has_mental_health_signal(text: str) -> bool:
+    normalized = _normalize_for_gate(text)
+    if not normalized:
+        return False
+    if any(term in normalized for term in MENTAL_HEALTH_CONTEXT_TERMS):
+        return True
+    return any(
+        pattern in normalized
+        for patterns in MENTAL_HEALTH_SIGNAL_PATTERNS.values()
+        for pattern in patterns
+    )
+
+
+def _matched_signal_labels(*texts: Optional[str]) -> set[str]:
+    labels: set[str] = set()
+    for text in texts:
+        if not text:
+            continue
+        normalized = _normalize_for_gate(text)
+        for label, patterns in MENTAL_HEALTH_SIGNAL_PATTERNS.items():
+            if any(pattern in normalized for pattern in patterns):
+                labels.add(label)
+    return labels
+
+
+def _normal_result(text: str, source: str = "domain_guard_normal") -> Dict[str, Any]:
+    scores = {label: 0.0 for label in MENTAL_HEALTH_LABELS}
+    scores["Normal"] = 1.0
+    return {
+        "text": text[:200],
+        "primary_condition": "Normal",
+        "primary_confidence": 1.0,
+        "all_scores": scores,
+        "top_predictions": [{"label": "Normal", "confidence": 1.0}],
+        "risk_signals": [],
+        "needs_attention": False,
+        "severity_level": 0,
+        "severity_label": MH_SEVERITY_LABELS.get(0, "healthy"),
+        "source": source,
+        "num_labels": len(MENTAL_HEALTH_LABELS),
+    }
+
+
+def _single_label_result(text: str, label: str, confidence: float, source: str) -> Dict[str, Any]:
+    scores = {name: 0.0 for name in MENTAL_HEALTH_LABELS}
+    scores[label] = confidence
+    severity_level = MH_SEVERITY_MAP.get(label, 0)
+    return {
+        "text": text[:200],
+        "primary_condition": label,
+        "primary_confidence": confidence,
+        "all_scores": scores,
+        "top_predictions": [{"label": label, "confidence": confidence}],
+        "risk_signals": [] if label == "Normal" else [{"label": label, "score": confidence}],
+        "needs_attention": label != "Normal",
+        "severity_level": severity_level,
+        "severity_label": MH_SEVERITY_LABELS.get(severity_level, "healthy"),
+        "source": source,
+        "num_labels": len(MENTAL_HEALTH_LABELS),
+    }
+
+
+def _best_matched_label(labels: set[str]) -> Optional[str]:
+    candidates = [label for label in labels if label in SIGNAL_LABEL_PRIORITY]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda label: SIGNAL_LABEL_PRIORITY[label])
+
+
+def _risk_signals_from_scores(scores: Dict[str, float], min_score: float = 0.15) -> List[Dict[str, float | str]]:
+    return [
+        {"label": label, "score": round(float(score), 4)}
+        for label, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        if label != "Normal" and score >= min_score
+    ][:4]
+
+
+def _risk_signals_from_matches(labels: set[str], score: float = 0.5) -> List[Dict[str, float | str]]:
+    return [
+        {"label": label, "score": score}
+        for label in sorted(labels, key=lambda item: SIGNAL_LABEL_PRIORITY.get(item, 0), reverse=True)
+        if label != "Normal"
+    ][:4]
 
 
 class MentalHealthInference:
@@ -122,6 +275,9 @@ class MentalHealthInference:
         return [{"label": label, "confidence": float(confidence)} for label, confidence in ranked]
 
     def _keyword_fallback(self, text: str) -> Dict[str, Any]:
+        if not _has_mental_health_signal(text):
+            return _normal_result(text, "keyword_fallback_domain_guard")
+
         lowered = text.lower()
         scores = {label: 0.0 for label in MENTAL_HEALTH_LABELS}
 
@@ -154,6 +310,7 @@ class MentalHealthInference:
             "primary_confidence": primary_confidence,
             "all_scores": scores,
             "top_predictions": self._build_top_predictions(scores),
+            "risk_signals": _risk_signals_from_scores(scores, min_score=0.10),
             "needs_attention": needs_attention,
             "severity_level": severity_level,
             "severity_label": MH_SEVERITY_LABELS.get(severity_level, "healthy"),
@@ -161,7 +318,16 @@ class MentalHealthInference:
             "num_labels": len(MENTAL_HEALTH_LABELS),
         }
 
-    def classify(self, text: str) -> Dict[str, Any]:
+    def classify(self, text: str, signal_text: Optional[str] = None) -> Dict[str, Any]:
+        matched_labels = _matched_signal_labels(text, signal_text)
+        has_signal = bool(matched_labels) or _has_mental_health_signal(text) or (
+            signal_text is not None and _has_mental_health_signal(signal_text)
+        )
+        if not has_signal:
+            return _normal_result(text)
+        if "Suicidal" in matched_labels:
+            return _single_label_result(text, "Suicidal", 1.0, "safety_rule_override")
+
         if self.model is None or self.tokenizer is None:
             return self._keyword_fallback(text)
 
@@ -193,12 +359,29 @@ class MentalHealthInference:
 
         probs_np = probs.cpu().numpy().tolist()
         primary_condition = MENTAL_HEALTH_LABELS[prediction_index]
+        if (
+            primary_condition != "Normal"
+            and primary_condition not in matched_labels
+            and confidence_val < MIN_CONFIDENCE_FOR_UNMATCHED_LABEL
+        ):
+            corrected_label = _best_matched_label(matched_labels)
+            if corrected_label:
+                return _single_label_result(
+                    text,
+                    corrected_label,
+                    max(0.5, float(confidence_val)),
+                    "signal_rule_correction",
+                )
+
         severity_level = MH_SEVERITY_MAP.get(primary_condition, 0)
 
         scores = {
             label: float(probs_np[i])
             for i, label in enumerate(MENTAL_HEALTH_LABELS)
         }
+        risk_signals = _risk_signals_from_matches(matched_labels)
+        if not risk_signals:
+            risk_signals = _risk_signals_from_scores(scores)
 
         return {
             "text": text[:200],
@@ -206,6 +389,7 @@ class MentalHealthInference:
             "primary_confidence": confidence_val,
             "all_scores": scores,
             "top_predictions": self._build_top_predictions(scores),
+            "risk_signals": risk_signals,
             "needs_attention": primary_condition != "Normal",
             "severity_level": severity_level,
             "severity_label": MH_SEVERITY_LABELS.get(severity_level, "healthy"),
@@ -239,6 +423,12 @@ class TopPrediction(BaseModel):
     confidence: float = 0.0
 
 
+class RiskSignal(BaseModel):
+    """A non-diagnostic screening signal surfaced for UI display."""
+    label: str
+    score: float = 0.0
+
+
 class MentalHealthResponse(BaseModel):
     """Response model for mental health analysis."""
     text: str
@@ -253,6 +443,7 @@ class MentalHealthResponse(BaseModel):
     severity_level: int = 0
     severity_label: str = "healthy"
     top_predictions: List[TopPrediction] = Field(default_factory=list)
+    risk_signals: List[RiskSignal] = Field(default_factory=list)
     extracted_features: Dict[str, float] = Field(default_factory=dict)
     disclaimer: str = "Ket qua chi ho tro sang loc, khong phai chan doan y khoa chinh thuc."
     dataset_loaded: bool = False
@@ -307,7 +498,7 @@ async def analyze_mental_health(request: MentalHealthRequest):
             logger.info("Translated VI->EN for mental health analysis: %s -> %s", request.text[:60], text_for_analysis[:60])
 
         infer = get_mental_health_inference()
-        result = infer.classify(text=text_for_analysis)
+        result = infer.classify(text=text_for_analysis, signal_text=request.text)
         
         processing_time = (time.time() - start) * 1000
         
@@ -315,6 +506,10 @@ async def analyze_mental_health(request: MentalHealthRequest):
         top_preds = [
             TopPrediction(label=p["label"], confidence=p["confidence"])
             for p in result.get("top_predictions", [])
+        ]
+        risk_signals = [
+            RiskSignal(label=s["label"], score=s["score"])
+            for s in result.get("risk_signals", [])
         ]
         
         return MentalHealthResponse(
@@ -330,6 +525,7 @@ async def analyze_mental_health(request: MentalHealthRequest):
             severity_level=result.get("severity_level", 0),
             severity_label=result.get("severity_label", "healthy"),
             top_predictions=top_preds,
+            risk_signals=risk_signals,
             extracted_features=result.get("extracted_features", {}),
             disclaimer=result.get("disclaimer", ""),
             dataset_loaded=result.get("dataset_loaded", False),
@@ -366,11 +562,15 @@ async def analyze_mental_health_batch(request: BatchMentalHealthRequest):
                 "target_language": "en",
                 "translated_text": text_for_analysis,
             } if text_for_analysis != text else {}
-            result = infer.classify(text=text_for_analysis)
+            result = infer.classify(text=text_for_analysis, signal_text=text)
             
             top_preds = [
                 TopPrediction(label=p["label"], confidence=p["confidence"])
                 for p in result.get("top_predictions", [])
+            ]
+            risk_signals = [
+                RiskSignal(label=s["label"], score=s["score"])
+                for s in result.get("risk_signals", [])
             ]
             
             results.append(MentalHealthResponse(
@@ -386,6 +586,7 @@ async def analyze_mental_health_batch(request: BatchMentalHealthRequest):
                 severity_level=result.get("severity_level", 0),
                 severity_label=result.get("severity_label", "healthy"),
                 top_predictions=top_preds,
+                risk_signals=risk_signals,
                 extracted_features=result.get("extracted_features", {}),
                 disclaimer=result.get("disclaimer", ""),
                 dataset_loaded=result.get("dataset_loaded", False),

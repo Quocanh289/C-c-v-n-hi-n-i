@@ -117,12 +117,19 @@ export type MentalHealthLabel = typeof MENTAL_HEALTH_LABELS[number];
 /** 7-label mental health scores */
 export type MentalHealthScores = Record<MentalHealthLabel, number>;
 
+export interface LabelScore {
+  label: string;
+  score: number;
+}
+
 /** Complete emotion analysis result */
 export interface EmotionResult {
   /** Result family */
   analysisType?: 'emotion' | 'mental_health';
   /** Primary detected emotion */
   primaryEmotion: string;
+  /** Multi-label emotion scores for display */
+  topEmotions?: LabelScore[];
   /** All emotion scores (confidence 0-1) for extension's 9 categories */
   scores: EmotionScores;
   /** 28 fine-grained scores (for English text) */
@@ -137,6 +144,8 @@ export interface EmotionResult {
   severityLevel?: number;
   /** Whether the mental health result needs attention */
   needsAttention?: boolean;
+  /** Non-diagnostic mental-health signals for display */
+  riskSignals?: LabelScore[];
   /** Label type: 'fine' (28) for English, 'coarse' (9) for Vietnamese */
   labelType?: 'fine' | 'coarse' | 'mental_health';
   /** Number of labels in the output */

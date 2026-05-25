@@ -110,10 +110,10 @@ const settingsBase = {
 };
 
 const modes = [
-  ['emotion_en', 'Joy', 'GoEmotions 28-label model'],
-  ['emotion_vi', 'Joy', 'VI->EN GoEmotions 28-label model'],
-  ['mental_health_en', 'Depression', 'Mental health model'],
-  ['mental_health_vi', 'Depression', 'VI->EN mental health model'],
+  ['emotion_en', 'Joy', 'Multi-label emotions'],
+  ['emotion_vi', 'Joy', 'VI->EN multi-label emotions'],
+  ['mental_health_en', 'Depression', 'Mental health screening'],
+  ['mental_health_vi', 'Depression', 'VI->EN mental health screening'],
 ];
 
 const results = [];
@@ -282,7 +282,7 @@ try {
 
   for (const [platform, url, text, youtube] of platformScenarios) {
     const badge = await injectContentWithMode({ mode: 'emotion_en', text, url, youtube });
-    const ok = Boolean(badge?.text?.includes('Joy') && badge?.title?.includes('GoEmotions 28-label model'));
+    const ok = Boolean(badge?.text?.includes('Joy') && badge?.title?.includes('Multi-label emotions'));
     results.push({ platform, mode: 'emotion_en', ok, badge });
   }
 } finally {
