@@ -99,26 +99,8 @@ async def analyze_endpoint(request: AnalyzeRequest):
             output_mode=request.output_mode,  # None = auto
         )
         screening = get_mental_health_inference().classify(request.text)
-        # Gọi trực tiếp hàm phân tích văn bản thực tế từ module ai_nlp
-        result = analyze_text(request.text)
         
         processing_time = (time.time() - start) * 1000
-        
-        # result trả về là một dictionary chứa thông tin phân tích
-        primary_emotion_val = "neutral"
-        confidence_val = 0.0
-        label_type_val = "fine"
-        language_val = "en"
-        scores_28_val = {}
-        scores_9_val = {}
-
-        if isinstance(result, dict):
-            primary_emotion_val = result.get("primary_emotion", "neutral")
-            confidence_val = result.get("confidence", 0.0)
-            label_type_val = result.get("label_type", "fine")
-            language_val = result.get("language", "en")
-            scores_28_val = result.get("scores_28", {})
-            scores_9_val = result.get("scores_9", {})
 
         return AnalyzeResponse(
             text=request.text[:100] + "..." if len(request.text) > 100 else request.text,
@@ -141,13 +123,6 @@ async def analyze_endpoint(request: AnalyzeRequest):
             risk_level=screening.get("risk_level", "none"),
             needs_attention=screening.get("needs_attention", False),
             mental_health_screening=screening,
-            primary_emotion=primary_emotion_val,
-            confidence=confidence_val,
-            label_type=label_type_val,
-            language=language_val,
-            scores_28=scores_28_val,
-            scores_9=scores_9_val,
-            processing_time_ms=processing_time
         )
     except Exception as e:
         logger.error(f"Analysis failed: {str(e)}", exc_info=True)
@@ -169,8 +144,6 @@ async def analyze_batch(request: BatchAnalyzeRequest):
         for text in request.texts:
             result = infer.classify(text=text, output_mode=None)
             result["mental_health_screening"] = get_mental_health_inference().classify(text)
-            # Gọi trực tiếp hàm phân tích của ai_nlp cho từng đoạn văn bản
-            result = analyze_text(text)
             results.append(result)
         
         response_results = [
