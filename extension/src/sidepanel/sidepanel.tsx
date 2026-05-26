@@ -49,83 +49,82 @@ const SidePanel: React.FC = () => {
   };
 
   const tabButton = (name: PanelTab, label: string, color: string) => (
-    <button onClick={() => selectTab(name)} style={{
-      flex: 1,
-      padding: '8px 10px',
-      borderRadius: 8,
-      border: `1px solid ${tab === name ? color : '#d1d5db'}`,
-      background: tab === name ? '#f8fafc' : 'white',
-      color: tab === name ? color : '#6b7280',
-      fontSize: 12,
-      fontWeight: 700,
-      cursor: 'pointer',
-    }}>
+    <button
+      className={`panel-tab ${tab === name ? 'active' : ''}`}
+      style={{ borderColor: tab === name ? color : undefined }}
+      onClick={() => selectTab(name)}
+    >
       {label}
     </button>
   );
 
-  return (
-    <div style={{ padding: 16, fontFamily: 'system-ui, -apple-system, sans-serif', color: '#1f2937' }}>
-      <style>{`body { margin: 0; background: #f9fafb; }`}</style>
-      <h1 style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>Emotion Lens</h1>
-      <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>
-        Only one mode scans at a time. Badges show the primary result plus secondary signal chips.
-      </p>
+  const emotionCards = (
+    <div className="label-grid">
+      {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
+        <div key={key} className="label-card" style={{ borderLeftColor: visual.color }}>
+          <div className="label-name">{visual.label}</div>
+          <div className="label-group">{visual.group}</div>
+        </div>
+      ))}
+    </div>
+  );
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+  return (
+    <div className="panel-shell">
+      <header className="panel-header">
+        <div>
+          <h1 className="panel-title">Emotion Lens</h1>
+          <p className="panel-copy">
+            Select one scan mode. Badges show the primary result plus secondary signal chips.
+          </p>
+        </div>
+        <span className="mode-pill">v2.1</span>
+      </header>
+
+      <div className="panel-tabs">
         {tabButton('en', 'EN Emotion', '#4f46e5')}
         {tabButton('vi', 'VI Emotion', '#ea580c')}
         {tabButton('mh', 'EN Mental', '#7c3aed')}
         {tabButton('mh_vi', 'VI Mental', '#db2777')}
       </div>
 
-      {tab === 'en' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-          {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
-            <div key={key} style={{ background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>{visual.label}</div>
-              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{visual.group}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      {tab === 'en' && emotionCards}
 
       {tab === 'vi' && (
         <div>
-          <p style={{ fontSize: 11, color: '#ea580c', marginBottom: 8, lineHeight: 1.4 }}>
-            VI text is auto-translated to EN → then analyzed with 28-label model.
+          <p className="panel-note">
+            Vietnamese text is translated to English before the 28-label emotion model runs.
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-            {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => (
-              <div key={key} style={{ background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700 }}>{visual.label}</div>
-                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{visual.group}</div>
-              </div>
-            ))}
-          </div>
+          {emotionCards}
         </div>
       )}
 
       {(tab === 'mh' || tab === 'mh_vi') && (
         <div>
-          <p style={{ fontSize: 11, color: tab === 'mh' ? '#7c3aed' : '#db2777', marginBottom: 8, lineHeight: 1.4 }}>
-            {tab === 'mh' 
-              ? 'Uses backend DeBERTa-v3 + LoRA best_model checkpoint.' 
-              : 'VI text is auto-translated to EN → DeBERTa-v3 + LoRA mental health model.'}
+          <p className="panel-note">
+            {tab === 'mh'
+              ? 'Uses backend DeBERTa-v3 + LoRA best_model checkpoint.'
+              : 'Vietnamese text is translated to English before the DeBERTa-v3 + LoRA mental health model runs.'}
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+          <div className="label-grid">
             {Object.entries(MENTAL_HEALTH_VISUALS).map(([key, visual]) => (
-              <div key={key} style={{ background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #e5e7eb', borderLeft: `4px solid ${visual.color}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700 }}>{visual.label}</div>
-                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{visual.severityLabel}</div>
+              <div key={key} className="label-card" style={{ borderLeftColor: visual.color }}>
+                <div className="label-name">{visual.label}</div>
+                <div className="label-group">{visual.severityLabel}</div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div style={{ marginTop: 16, padding: '12px 0', borderTop: '1px solid #e5e7eb', fontSize: 10, color: '#6b7280', textAlign: 'center' }}>
-        Active mode: {tab === 'en' ? 'English Emotion (28-label)' : tab === 'vi' ? 'Vietnamese Emotion (Vi→En→28)' : tab === 'mh' ? 'English Mental Health' : 'Vietnamese Mental Health (Vi→En)'}
+      <div className="panel-footer">
+        Active mode: {tab === 'en'
+          ? 'English Emotion (28-label)'
+          : tab === 'vi'
+            ? 'Vietnamese Emotion (VI to EN to 28)'
+            : tab === 'mh'
+              ? 'English Mental Health'
+              : 'Vietnamese Mental Health (VI to EN)'}
       </div>
     </div>
   );

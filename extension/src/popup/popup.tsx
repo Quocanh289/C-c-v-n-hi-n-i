@@ -11,7 +11,6 @@ import {
   DEFAULT_SETTINGS,
   DetectionMode,
   GOEMOTIONS_28_VISUALS,
-  COARSE_EMOTIONS_VISUALS,
   MENTAL_HEALTH_VISUALS,
 } from '../types/emotion';
 
@@ -91,6 +90,40 @@ export default function Popup() {
     loadSettings();
   }, []);
 
+  const renderEmotion28Grid = () => (
+    <div className="emotion-grid-28">
+      {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => {
+        const emotionMap: Record<string, EmotionCategory> = {
+          admiration: EmotionCategory.Joy, amusement: EmotionCategory.Joy,
+          anger: EmotionCategory.Anger, annoyance: EmotionCategory.Anger,
+          approval: EmotionCategory.Joy, caring: EmotionCategory.Joy,
+          confusion: EmotionCategory.Surprise, curiosity: EmotionCategory.Surprise,
+          desire: EmotionCategory.Joy, disappointment: EmotionCategory.Sadness,
+          disapproval: EmotionCategory.Anger, disgust: EmotionCategory.Anger,
+          embarrassment: EmotionCategory.Sadness, excitement: EmotionCategory.Joy,
+          fear: EmotionCategory.Fear, gratitude: EmotionCategory.Joy,
+          grief: EmotionCategory.Sadness, joy: EmotionCategory.Joy,
+          love: EmotionCategory.Joy, nervousness: EmotionCategory.Anxiety,
+          optimism: EmotionCategory.Joy, pride: EmotionCategory.Joy,
+          realization: EmotionCategory.Surprise, relief: EmotionCategory.Joy,
+          remorse: EmotionCategory.Sadness, sadness: EmotionCategory.Sadness,
+          surprise: EmotionCategory.Surprise, neutral: EmotionCategory.Neutral,
+        };
+        const detected = stats?.emotionsDetected[emotionMap[key] as EmotionCategory] || 0;
+        return (
+          <div key={key} className="emotion-card" style={{ borderLeftColor: visual.color, borderLeftWidth: 3 }}>
+            <span className="emotion-icon">{visual.icon}</span>
+            <div className="emotion-info">
+              <span className="emotion-name">{visual.label}</span>
+              <span className="emotion-group">{tab === 'vi' ? 'VI to EN' : visual.group}</span>
+            </div>
+            {detected > 0 && <span className="emotion-count" style={{ color: visual.color }}>{detected}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   // --- Giao diện hiển thị ---
   return (
     <div className="popup-container">
@@ -103,16 +136,22 @@ export default function Popup() {
       </div>
 
       {/* Khu vực hiển thị nút xem Dashboard */}
-      <div className="p-4 w-64 border-b border-gray-700">
-        <h1 className="font-bold text-lg mb-2">My Emotion Lens</h1>
-        <p className="text-xs text-gray-400 mb-3">Your ID: {userId || 'Loading...'}</p>
+      <div className="dashboard-card">
+        <div className="dashboard-top">
+          <div>
+            <p className="section-title">My Emotion Lens</p>
+            <p className="user-id">ID: {userId || 'Loading...'}</p>
+          </div>
+          <span className="status-pill">{settings.enabled ? 'Active' : 'Paused'}</span>
+        </div>
         <button
           onClick={handleOpenDashboard}
           disabled={!userId}
-          className="w-full bg-blue-600 text-white text-sm px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+          className="dashboard-btn"
         >
           View Analytics Dashboard
         </button>
+        <p className="dashboard-hint">Save selected text from the context menu to build your timeline.</p>
       </div>
 
       {!loading && stats && stats.totalAnalyzed > 0 && (
@@ -159,50 +198,7 @@ export default function Popup() {
           : 'Shows primary emotion plus secondary emotion chips when present'}
       </div>
 
-      {tab === 'en' && (
-        <div className="emotion-grid-28">
-          {Object.entries(GOEMOTIONS_28_VISUALS).map(([key, visual]) => {
-            const emotionMap: Record<string, EmotionCategory> = {
-              admiration: EmotionCategory.Joy, amusement: EmotionCategory.Joy,
-              anger: EmotionCategory.Anger, annoyance: EmotionCategory.Anger,
-              approval: EmotionCategory.Joy, caring: EmotionCategory.Joy,
-              confusion: EmotionCategory.Surprise, curiosity: EmotionCategory.Surprise,
-              desire: EmotionCategory.Joy, disappointment: EmotionCategory.Sadness,
-              disapproval: EmotionCategory.Anger, disgust: EmotionCategory.Anger,
-              embarrassment: EmotionCategory.Sadness, excitement: EmotionCategory.Joy,
-              fear: EmotionCategory.Fear, gratitude: EmotionCategory.Joy,
-              grief: EmotionCategory.Sadness, joy: EmotionCategory.Joy,
-              love: EmotionCategory.Joy, nervousness: EmotionCategory.Anxiety,
-              optimism: EmotionCategory.Joy, pride: EmotionCategory.Joy,
-              realization: EmotionCategory.Surprise, relief: EmotionCategory.Joy,
-              remorse: EmotionCategory.Sadness, sadness: EmotionCategory.Sadness,
-              surprise: EmotionCategory.Surprise, neutral: EmotionCategory.Neutral,
-            };
-            const detected = stats?.emotionsDetected[emotionMap[key] as EmotionCategory] || 0;
-            return (
-              <div key={key} className="emotion-card" style={{ borderLeftColor: visual.color, borderLeftWidth: 3 }}>
-                <span className="emotion-icon">{visual.icon}</span>
-                <div className="emotion-info">
-                  <span className="emotion-name">{visual.label}</span>
-                  <span className="emotion-group">{visual.group}</span>
-                </div>
-                {detected > 0 && <span className="emotion-count" style={{ color: visual.color }}>{detected}</span>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {tab === 'vi' && (
-        <div className="emotion-grid-9">
-          {Object.entries(COARSE_EMOTIONS_VISUALS).map(([key, visual]) => (
-            <div key={key} className="emotion-card coarse" style={{ borderLeftColor: visual.color, borderLeftWidth: 4 }}>
-              <span className="emotion-icon">{visual.icon}</span>
-              <span className="emotion-name">{visual.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {(tab === 'en' || tab === 'vi') && renderEmotion28Grid()}
 
       {(tab === 'mh' || tab === 'mh_vi') && (
         <div className="emotion-grid-9">

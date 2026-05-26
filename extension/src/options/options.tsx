@@ -67,7 +67,10 @@ const Options: React.FC = () => {
   return (
     <div className="options-container">
       <header className="options-header">
-        <h1>Emotion Lens Settings</h1>
+        <div className="title-block">
+          <h1>Emotion Lens Settings</h1>
+          <p className="header-subtitle">Configure scanning, labels, and backend connection for the extension UI.</p>
+        </div>
         {saved && <span className="saved-badge">Saved</span>}
       </header>
 

@@ -6,74 +6,126 @@
   <title>Emotion Lens</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --surface: #111827;
+      --surface-2: #1f2937;
+      --border: #263244;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --soft: #cbd5e1;
+      --accent: #38bdf8;
+      --accent-2: #818cf8;
+      --success: #34d399;
+    }
     body {
-      width: 380px;
-      min-height: 400px;
+      width: 392px;
+      min-height: 520px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #ffffff;
-      color: #1f2937;
+      background: var(--bg);
+      color: var(--text);
       overflow-x: hidden;
     }
     
     .popup-container {
       padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
     
     .popup-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px;
     }
-    .header-left { display: flex; align-items: center; gap: 8px; }
-    .logo { font-size: 20px; }
-    h1 { font-size: 16px; font-weight: 700; margin: 0; }
+    .header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .logo {
+      width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 8px; background: #e0f2fe; color: #075985; font-size: 13px; font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    h1 { font-size: 16px; font-weight: 750; margin: 0; letter-spacing: 0; }
     .version-badge {
-      font-size: 10px; color: #6366f1; background: #eef2ff;
-      padding: 2px 8px; border-radius: 8px; font-weight: 600;
+      font-size: 10px; color: #bfdbfe; background: #1e3a8a;
+      padding: 4px 8px; border-radius: 999px; font-weight: 700;
     }
+
+    .dashboard-card {
+      border: 1px solid #1e40af;
+      background: #0f1f3a;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .dashboard-top {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+      margin-bottom: 10px;
+    }
+    .section-title { font-size: 13px; font-weight: 750; color: var(--text); }
+    .user-id {
+      margin-top: 3px; max-width: 238px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 10px; color: #93c5fd;
+    }
+    .status-pill {
+      flex: 0 0 auto; font-size: 10px; font-weight: 750; color: #bbf7d0; background: #064e3b;
+      border: 1px solid #047857; border-radius: 999px; padding: 3px 7px;
+    }
+    .dashboard-btn {
+      width: 100%; border: 0; border-radius: 7px; padding: 9px 10px;
+      background: #2563eb; color: white; font-size: 12px; font-weight: 750; cursor: pointer;
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+    .dashboard-btn:hover { background: #1d4ed8; }
+    .dashboard-btn:active { transform: translateY(1px); }
+    .dashboard-btn:disabled { background: #334155; color: #94a3b8; cursor: not-allowed; transform: none; }
+    .dashboard-hint { margin-top: 8px; font-size: 10px; line-height: 1.4; color: #bfdbfe; }
     
-    /* Stats Bar */
-    .stats-bar { display: flex; gap: 6px; margin-bottom: 10px; }
+    .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
     .stat-item {
-      flex: 1; background: #f3f4f6; border-radius: 8px;
-      padding: 8px 4px; text-align: center;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 5px; text-align: center;
     }
-    .stat-value { display: block; font-size: 15px; font-weight: 700; color: #6366f1; }
-    .stat-label { display: block; font-size: 9px; color: #9ca3af; margin-top: 1px; text-transform: uppercase; }
+    .stat-value { display: block; font-size: 15px; font-weight: 800; color: var(--accent); }
+    .stat-label { display: block; font-size: 8px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
     
-    /* Tab Bar */
-    .tab-bar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab-bar {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+      padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: #0b1220;
+    }
     .tab-btn {
-      flex: 1 1 calc(50% - 6px); padding: 8px 8px; border-radius: 8px; border: 1px solid #d1d5db;
-      background: white; font-size: 11px; font-weight: 600; cursor: pointer;
-      color: #6b7280; transition: all 0.2s;
+      min-height: 34px; padding: 7px 6px; border-radius: 6px; border: 1px solid transparent;
+      background: transparent; font-size: 10px; font-weight: 750; cursor: pointer;
+      color: var(--muted); transition: all 0.15s ease;
     }
-    .tab-btn.active { background: #eef2ff; border-color: #6366f1; color: #4f46e5; }
+    .tab-btn:hover { color: var(--text); background: #172033; }
+    .tab-btn.active { background: #1e293b; border-color: #334155; color: #e0f2fe; }
     
-    /* Model Info */
     .model-info {
-      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;
-      padding: 8px 12px; margin-bottom: 12px; font-size: 11px; color: #0369a1; line-height: 1.5;
+      background: #082f49; border: 1px solid #0e7490; border-radius: 8px;
+      padding: 10px 12px; font-size: 11px; color: #bae6fd; line-height: 1.5;
     }
     
-    /* 28 Emotion Grid */
-    .emotion-grid-28 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-bottom: 12px; max-height: 360px; overflow-y: auto; }
+    .emotion-grid-28 {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+      max-height: 292px; overflow-y: auto; padding-right: 2px;
+    }
+    .emotion-grid-28::-webkit-scrollbar { width: 6px; }
+    .emotion-grid-28::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
     .emotion-card {
       display: flex; align-items: center; gap: 6px; padding: 7px 8px;
-      border-radius: 8px; border: 1px solid #e5e7eb; border-left: 3px solid #6b7280;
-      background: #f9fafb; font-size: 12px;
+      border-radius: 8px; border: 1px solid var(--border); border-left: 3px solid #6b7280;
+      background: var(--surface); font-size: 12px; min-width: 0;
     }
-    .emotion-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+    .emotion-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
     .emotion-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .emotion-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .emotion-group { font-size: 9px; color: #9ca3af; text-transform: capitalize; }
-    .emotion-count { font-size: 12px; font-weight: 700; min-width: 22px; text-align: right; flex-shrink: 0; }
+    .emotion-name { font-size: 11px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .emotion-group { font-size: 9px; color: var(--muted); text-transform: capitalize; }
+    .emotion-count { font-size: 12px; font-weight: 800; min-width: 22px; text-align: right; flex-shrink: 0; }
     
-    /* 9 Emotion Grid */
-    .emotion-grid-9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
-    .emotion-card.coarse { padding: 10px; flex-direction: column; text-align: center; gap: 4px; }
-    .emotion-card.coarse .emotion-icon { font-size: 20px; }
+    .emotion-grid-9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .emotion-card.coarse { min-height: 78px; padding: 10px 8px; flex-direction: column; text-align: center; gap: 5px; justify-content: center; }
+    .emotion-card.coarse .emotion-icon { font-size: 19px; }
     .emotion-card.coarse .emotion-name { font-size: 12px; font-weight: 700; }
     
     .vi-notice {
@@ -81,32 +133,16 @@
       background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; line-height: 1.5;
     }
     
-    /* Actions */
-    .actions-section { display: flex; gap: 8px; margin-bottom: 10px; }
+    .actions-section { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .action-btn {
-      flex: 1; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px;
-      background: white; font-size: 12px; color: #374151; cursor: pointer; font-weight: 500;
+      min-height: 34px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface); font-size: 12px; color: var(--soft); cursor: pointer; font-weight: 700;
+      transition: background 0.15s ease, border-color 0.15s ease;
     }
-    .action-btn:hover { background: #f9fafb; border-color: #d1d5db; }
+    .action-btn:hover { background: #1e293b; border-color: #475569; }
     
-    .popup-footer { text-align: center; padding-top: 8px; border-top: 1px solid #f3f4f6; }
-    .footer-text { font-size: 10px; color: #9ca3af; }
-    
-    @media (prefers-color-scheme: dark) {
-      body { background: #111827; color: #f3f4f6; }
-      .version-badge { color: #a78bfa; background: #2e1065; }
-      .stats-bar .stat-item { background: #1f2937; }
-      .stat-value { color: #818cf8; }
-      .tab-btn { background: #1f2937; border-color: #374151; color: #9ca3af; }
-      .tab-btn.active { background: #2e1065; border-color: #7c3aed; color: #a78bfa; }
-      .model-info { background: #0c4a6e; border-color: #075985; color: #7dd3fc; }
-      .emotion-card { background: #1f2937; border-color: #374151; }
-      .emotion-group { color: #6b7280; }
-      .vi-notice { background: #431407; border-color: #7c2d12; color: #fdba74; }
-      .action-btn { background: #1f2937; border-color: #374151; color: #d1d5db; }
-      .action-btn:hover { background: #374151; }
-      .popup-footer { border-color: #374151; }
-    }
+    .popup-footer { text-align: center; padding-top: 2px; }
+    .footer-text { font-size: 10px; color: var(--muted); }
   </style>
 </head>
 <body>

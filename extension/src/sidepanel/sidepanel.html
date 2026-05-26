@@ -4,6 +4,66 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Emotion Lens - Details</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --surface: #111827;
+      --surface-2: #1e293b;
+      --border: #263244;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --soft: #cbd5e1;
+      --accent: #38bdf8;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .panel-shell { min-height: 100vh; padding: 16px; }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding-bottom: 14px; border-bottom: 1px solid var(--border);
+    }
+    .panel-title { font-size: 18px; font-weight: 800; margin: 0; letter-spacing: 0; }
+    .panel-copy { margin: 8px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .mode-pill {
+      flex: 0 0 auto; border: 1px solid #0e7490; background: #082f49; color: #bae6fd;
+      border-radius: 999px; padding: 5px 8px; font-size: 10px; font-weight: 800;
+    }
+    .panel-tabs {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px;
+      margin: 14px 0;
+    }
+    .panel-tab {
+      min-height: 38px; border: 1px solid var(--border); border-radius: 7px; background: #0b1220;
+      color: var(--muted); font-size: 12px; font-weight: 800; cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .panel-tab:hover { background: #172033; color: var(--text); }
+    .panel-tab.active { background: #1e293b; color: #e0f2fe; }
+    .panel-note {
+      margin: 0 0 10px; padding: 10px 12px; border-radius: 8px;
+      border: 1px solid #0e7490; background: #082f49; color: #bae6fd;
+      font-size: 11px; line-height: 1.5;
+    }
+    .label-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+    .label-card {
+      background: var(--surface); border: 1px solid var(--border); border-left: 4px solid #64748b;
+      border-radius: 8px; padding: 10px; min-width: 0;
+    }
+    .label-name {
+      font-size: 12px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .label-group { margin-top: 3px; font-size: 10px; color: var(--muted); }
+    .panel-footer {
+      margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+      font-size: 10px; line-height: 1.5; color: var(--muted); text-align: center;
+    }
+  </style>
 </head>
 <body>
   <div id="root"></div>

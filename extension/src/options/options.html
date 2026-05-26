@@ -6,70 +6,109 @@
   <title>Emotion Lens - Settings</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --surface: #111827;
+      --surface-2: #1e293b;
+      --border: #263244;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --soft: #cbd5e1;
+      --accent: #38bdf8;
+      --accent-2: #818cf8;
+      --danger: #f87171;
+      --success: #34d399;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f9fafb;
-      color: #1f2937;
+      background: var(--bg);
+      color: var(--text);
       padding: 24px;
-      max-width: 800px;
+      max-width: 960px;
       margin: 0 auto;
     }
-    .options-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-    .options-header h1 { font-size: 22px; font-weight: 700; }
-    .saved-badge { font-size: 13px; color: #059669; background: #d1fae5; padding: 3px 10px; border-radius: 999px; }
+    .options-container { display: grid; gap: 16px; }
+    .options-header {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding-bottom: 4px;
+    }
+    .title-block { display: grid; gap: 4px; }
+    .options-header h1 { font-size: 24px; font-weight: 800; letter-spacing: 0; }
+    .header-subtitle { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .saved-badge {
+      font-size: 12px; color: #bbf7d0; background: #064e3b; border: 1px solid #047857;
+      padding: 5px 10px; border-radius: 999px; font-weight: 750;
+    }
     .model-banner {
-      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px;
-      padding: 14px 18px; margin-bottom: 16px; font-size: 13px; color: #0369a1; line-height: 1.6;
+      background: #082f49; border: 1px solid #0e7490; border-radius: 8px;
+      padding: 14px 16px; font-size: 13px; color: #bae6fd; line-height: 1.6;
     }
-    .options-section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid #e5e7eb; }
-    .options-section h2 { font-size: 14px; font-weight: 600; color: #6b7280; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
-    .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+    .options-section {
+      background: var(--surface); border-radius: 8px; padding: 18px; border: 1px solid var(--border);
+    }
+    .options-section h2 {
+      font-size: 12px; font-weight: 800; color: var(--soft); margin-bottom: 14px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 18px;
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
     .setting-row:last-child { border-bottom: none; }
-    .setting-row label { font-size: 14px; color: #374151; flex: 1; }
-    .setting-row input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; accent-color: #6366f1; }
-    .setting-row input[type="range"] { width: 200px; cursor: pointer; accent-color: #6366f1; }
+    .setting-row label { font-size: 14px; color: var(--soft); flex: 1; font-weight: 650; }
+    .setting-row input[type="checkbox"] {
+      width: 38px; height: 22px; cursor: pointer; accent-color: var(--accent-2);
+    }
+    .setting-row input[type="range"] { width: min(320px, 42vw); cursor: pointer; accent-color: var(--accent); }
+    .setting-row input[type="text"] {
+      width: min(420px, 50vw); border: 1px solid var(--border); background: #0b1220; color: var(--text);
+      border-radius: 7px; padding: 9px 10px; font-size: 13px; outline: none;
+    }
+    .setting-row input[type="text"]:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,0.16); }
     
-    /* Tab Bar */
-    .tab-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .tab-bar {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;
+      margin-bottom: 14px;
+    }
     .tab-btn {
-      padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db;
-      background: white; font-size: 13px; font-weight: 600; cursor: pointer;
-      color: #6b7280; transition: all 0.2s; flex: 1 1 150px;
+      min-height: 40px; padding: 9px 12px; border-radius: 7px; border: 1px solid var(--border);
+      background: #0b1220; font-size: 13px; font-weight: 750; cursor: pointer;
+      color: var(--muted); transition: all 0.15s ease;
     }
+    .tab-btn:hover { color: var(--text); border-color: #475569; background: #172033; }
     .tab-btn.active {
-      background: #eef2ff; border-color: #6366f1; color: #4f46e5;
+      background: #1e293b; border-color: #38bdf8; color: #e0f2fe;
     }
     
-    /* 28 Emotion Grid */
-    .emotion-grid-28 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .emotion-grid-28 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .emotion-card {
-      display: flex; align-items: center; gap: 6px; padding: 8px;
-      border-radius: 8px; border: 2px solid #e5e7eb; cursor: pointer;
-      transition: all 0.2s; font-size: 12px;
+      display: flex; align-items: center; gap: 8px; padding: 10px;
+      border-radius: 8px; border: 1px solid var(--border); cursor: default;
+      transition: all 0.15s ease; font-size: 12px; background: #0b1220; min-width: 0;
     }
-    .emotion-card.enabled { background: #f5f3ff; }
-    .emotion-card .emotion-icon { font-size: 14px; width: 20px; text-align: center; }
-    .emotion-card-info { flex: 1; display: flex; flex-direction: column; }
-    .emotion-card .emotion-name { font-size: 11px; font-weight: 600; }
-    .emotion-card .emotion-group { font-size: 9px; color: #9ca3af; }
+    .emotion-card.enabled { background: #111c2e; }
+    .emotion-card .emotion-icon { font-size: 15px; width: 20px; text-align: center; flex: 0 0 auto; }
+    .emotion-card-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .emotion-card .emotion-name { font-size: 12px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .emotion-card .emotion-group { font-size: 10px; color: var(--muted); }
     .emotion-card .emotion-toggle { font-size: 11px; font-weight: 700; width: 16px; text-align: center; }
     .emotion-grid-9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .emotion-card.coarse { padding: 12px; }
+    .emotion-card.coarse { padding: 12px; min-height: 72px; }
     .emotion-card.coarse .emotion-name { font-size: 13px; font-weight: 700; }
     
-    .reset-btn { padding: 10px 20px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; cursor: pointer; font-size: 14px; }
-    .reset-btn:hover { background: #fee2e2; }
-    
-    @media (prefers-color-scheme: dark) {
-      body { background: #111827; color: #f3f4f6; }
-      .options-section { background: #1f2937; border-color: #374151; }
-      .setting-row { border-color: #374151; }
-      .setting-row label { color: #d1d5db; }
-      .emotion-card { border-color: #374151; }
-      .emotion-card.enabled { background: #2e1065; }
-      .model-banner { background: #0c4a6e; border-color: #075985; color: #7dd3fc; }
-      .tab-btn { background: #1f2937; border-color: #374151; color: #9ca3af; }
-      .tab-btn.active { background: #2e1065; border-color: #7c3aed; color: #a78bfa; }
+    .reset-btn {
+      padding: 10px 16px; background: #2b1116; color: #fecaca; border: 1px solid #7f1d1d;
+      border-radius: 7px; cursor: pointer; font-size: 14px; font-weight: 750;
+    }
+    .reset-btn:hover { background: #3f1218; }
+
+    @media (max-width: 720px) {
+      body { padding: 16px; }
+      .tab-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .emotion-grid-28 { grid-template-columns: repeat(2, 1fr); }
+      .setting-row { align-items: flex-start; flex-direction: column; gap: 10px; }
+      .setting-row input[type="text"], .setting-row input[type="range"] { width: 100%; }
     }
   </style>
 </head>
