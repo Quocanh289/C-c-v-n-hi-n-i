@@ -576,6 +576,16 @@ def calculate_risk_level(records: list[DashboardSavedTextResponse]) -> str:
 
     if has_suicidal_signal:
         return "High"
+
+    # With very few snippets, avoid escalating to High from ratios alone.
+    # A single non-normal prediction should prompt monitoring, not a strong trend conclusion.
+    if len(records) < 3:
+        if highest_weighted_score >= 3.4:
+            return "High"
+        if highest_weighted_score >= 0.9 or non_normal_count > 0:
+            return "Medium"
+        return "Low"
+
     if highest_weighted_score >= 2.6 or average_weighted_score >= 1.7:
         return "High"
     if high_severity_ratio >= 0.35:
@@ -642,7 +652,13 @@ def build_condition_badges(conditions: list[str]) -> list[ConditionBadge]:
     ]
 
 
-def build_recommendations(risk_level: str, negative_load: float) -> list[str]:
+def build_recommendations(
+    risk_level: str,
+    negative_load: float,
+    dominant_issue: str,
+    potential_conditions: list[str],
+    total_snippets: int,
+) -> list[str]:
     if risk_level == "High":
         recommendations = [
             "Reduce overload today and prioritize rest blocks.",
@@ -661,6 +677,31 @@ def build_recommendations(risk_level: str, negative_load: float) -> list[str]:
             "Watch for sudden increases in fear, anxiety, or sadness.",
             "Balance workload with recovery breaks to sustain stability.",
         ]
+
+    if total_snippets < 3:
+        recommendations.insert(
+            0,
+            "Add at least three saved snippets before treating this as a reliable personal trend.",
+        )
+
+    if dominant_issue == "Anxiety" or "Anxiety Risk" in potential_conditions:
+        recommendations.append(
+            "For anxiety patterns, note the trigger, body sensation, and one grounding action that helped."
+        )
+    elif dominant_issue == "Depression" or "Depressive Symptoms" in potential_conditions:
+        recommendations.append(
+            "For low-mood patterns, track sleep, appetite, energy, and whether social withdrawal is increasing."
+        )
+    elif dominant_issue == "Stress" or "Mild Stress" in potential_conditions:
+        recommendations.append(
+            "For stress patterns, separate urgent tasks from deferrable tasks and schedule a recovery block."
+        )
+
+    if "Acute Crisis Risk" in potential_conditions:
+        recommendations.insert(
+            0,
+            "If there is any immediate risk of harm, contact emergency services or a local crisis hotline now.",
+        )
 
     if negative_load >= 0.55:
         recommendations.append(
@@ -746,7 +787,7 @@ def build_ai_summary(
         f"({round(dominant_ratio * 100)}%), with average model confidence at {confidence_percent}%. "
         f"Issue distribution: {issue_distribution_text}. Emotion nuance trend: {emotion_distribution_text}. "
         f"Non-normal ratio: {round(non_normal_ratio * 100)}%; higher-severity ratio: {round(high_severity_ratio * 100)}%. "
-        f"Potential conditions you might be experiencing: {potential_conditions_text}. "
+        f"Patterns that may deserve attention: {potential_conditions_text}. "
         f"Recommendation: {recommendation_text} "
         f"{DISCLAIMER_TEXT}"
     )
@@ -815,7 +856,13 @@ def aggregate_dashboard(records: list[DashboardSavedTextResponse]) -> Aggregated
     )
     condition_badges = build_condition_badges(potential_conditions)
     negative_load = sum(nuance_ratios.get(key, 0.0) for key in NEGATIVE_NUANCES)
-    recommendations = build_recommendations(risk_level, negative_load)
+    recommendations = build_recommendations(
+        risk_level=risk_level,
+        negative_load=negative_load,
+        dominant_issue=dominant_issue,
+        potential_conditions=potential_conditions,
+        total_snippets=total_snippets,
+    )
 
     ai_summary = build_ai_summary(
         total=total_snippets,

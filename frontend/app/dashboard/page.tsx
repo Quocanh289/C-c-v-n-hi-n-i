@@ -394,7 +394,7 @@ function SnippetCard({ item }: { item: SavedText }) {
 
 export default function DashboardPage() {
   const searchParams = useSearchParams();
-  const uid = useMemo(() => searchParams.get('uid') || '', [searchParams]);
+  const uid = useMemo(() => searchParams?.get('uid') || '', [searchParams]);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -649,7 +649,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="rounded-lg border border-amber-400/25 bg-slate-900/70 p-4">
-                    <h3 className="text-sm font-semibold text-amber-100">Potential Conditions</h3>
+                    <h3 className="text-sm font-semibold text-amber-100">Signals to Watch</h3>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {potentialConditions.map((condition, index) => (
                         <ConditionBadgeItem key={`${condition.label}-${index}`} condition={condition} />
