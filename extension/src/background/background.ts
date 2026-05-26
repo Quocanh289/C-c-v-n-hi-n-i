@@ -41,6 +41,17 @@ let activeTabId: number | null = null;
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
 
+async function getOrCreateUserId(): Promise<string> {
+  const storage = await chrome.storage.local.get(['userId']);
+  if (typeof storage.userId === 'string' && storage.userId.length > 0) {
+    return storage.userId;
+  }
+
+  const userId = crypto.randomUUID();
+  await chrome.storage.local.set({ userId });
+  return userId;
+}
+
 function normalizeSettings(rawSettings?: Partial<ExtensionSettings>): ExtensionSettings {
   const normalized = { ...DEFAULT_SETTINGS, ...rawSettings } as ExtensionSettings;
   if (!rawSettings?.backendApiUrl || rawSettings.backendApiUrl === 'http://localhost:8000') {
@@ -332,12 +343,8 @@ chrome.runtime.onInstalled.addListener((details) => {
 // 1. Chạy logic khởi tạo khi tiện ích vừa được cài đặt hoặc cập nhật
 chrome.runtime.onInstalled.addListener(async () => {
   // Sinh mã định danh ẩn danh (UUID) nếu chưa có
-  const storage = await chrome.storage.local.get(['userId']);
-  if (!storage.userId) {
-    const uuid = crypto.randomUUID(); // Hàm có sẵn của trình duyệt sinh UUID an toàn
-    await chrome.storage.local.set({ userId: uuid });
-    console.log("Đã khởi tạo UUID cho người dùng mới:", uuid);
-  }
+  const userId = await getOrCreateUserId();
+  console.log("Đã khởi tạo UUID cho người dùng:", userId);
 
   // Khởi tạo Context Menu
   chrome.contextMenus.create({
@@ -352,12 +359,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "save-to-emotion-lens" && info.selectionText) {
     
     // Lấy UUID ẩn danh từ Storage
-    const storage = await chrome.storage.local.get('userId');
-    const userId = storage.userId;
+    const userId = await getOrCreateUserId();
 
     try {
       // Gửi POST request có chứa UID và đoạn văn bản tới server Backend
-      const response = await fetch("http://localhost:8000/api/save", {
+      const response = await fetch("http://localhost:8000/api/save-text", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
